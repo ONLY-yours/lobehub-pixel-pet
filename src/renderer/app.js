@@ -347,7 +347,7 @@ function bindPetUi() {
   // ---- pictures: paste (Ctrl/⌘+V), drag in, or the 📎 button; Escape stops a running task
   document.addEventListener('paste', (e) => {
     const files = [...((e.clipboardData && e.clipboardData.files) || [])];
-    if (!files.length || $('pet-screen').classList.contains('hidden')) return;
+    if (!files.length || $('pet-screen').classList.contains('hidden') || !pointerInside) return; // hover the pet first
     e.preventDefault();
     if (thinking) return;
     openChat();
@@ -391,22 +391,29 @@ function bindPetUi() {
 }
 
 // Controls are hidden unless the pointer is over the window (or one is in use).
-function hudInUse() {
-  return document.activeElement === $('chat-input') || !$('chat-row').classList.contains('hidden') || !$('food-menu').classList.contains('hidden') || !$('main-menu').classList.contains('hidden');
-}
+// The controls exist only while the pointer is over the pet window (and it is not working). Nothing
+// keeps them open: moving away hides everything, even an open chat box. The draft text and attached
+// files are kept and come back with the next hover.
 function syncHover() {
   document.body.classList.toggle('over', pointerInside); // pointer over the window (used by the stop button)
-  document.body.classList.toggle('hover', !thinking && (pointerInside || hudInUse()));
+  document.body.classList.toggle('hover', !thinking && pointerInside);
+  if (!pointerInside) {
+    if (document.activeElement === $('chat-input')) $('chat-input').blur(); // keystrokes must not go into a hidden box
+    $('food-menu').classList.add('hidden');
+    $('main-menu').classList.add('hidden');
+  }
 }
 function bindHover() {
   const root = document.documentElement;
-  root.addEventListener('mouseenter', () => { pointerInside = true; syncHover(); });
-  root.addEventListener('mouseleave', () => { pointerInside = false; syncHover(); });
-  window.addEventListener('mousemove', () => { if (!pointerInside) { pointerInside = true; syncHover(); } });
-  window.addEventListener('blur', () => { pointerInside = false; syncHover(); });
-  $('chat-input').addEventListener('blur', syncHover);
-  $('chat-input').addEventListener('focus', syncHover);
-  new MutationObserver(syncHover).observe($('hud'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+  const set = (inside) => { if (pointerInside !== inside) { pointerInside = inside; syncHover(); } };
+  root.addEventListener('mouseenter', () => set(true));
+  root.addEventListener('mouseleave', () => set(false));
+  window.addEventListener('mousemove', () => set(true));
+  window.addEventListener('blur', () => set(false));
+  // dragging a file over the window counts as being on the pet (no mouse events fire during an OS drag)
+  document.addEventListener('dragenter', () => set(true));
+  document.addEventListener('dragover', () => set(true));
+  document.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) set(false); });
 }
 
 // ---------- pictures and files to send ----------

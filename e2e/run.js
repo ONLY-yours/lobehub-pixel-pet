@@ -274,6 +274,22 @@ async function busy() {
       assert.ok(fs.existsSync(path.join(fakeDir, 'daemon-started')));
     });
 
+    await step(S, 'with the chat box open, moving the pointer away hides everything; the draft returns on the next hover', async () => {
+      await clickAct(page, 'chat'); // opens the chat box, pointer inside
+      await page.fill('#chat-input', '草稿还在');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'chat-input');
+      await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 5000 });
+      assert.equal(await page.evaluate(() => document.body.classList.contains('hover')), false);
+      assert.notEqual(await page.evaluate(() => document.activeElement.id), 'chat-input', 'the hidden box must not keep keyboard focus');
+      await page.screenshot({ path: path.join(OUT, 'away-hidden.png') });
+      await hover(page);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '1', null, { timeout: 5000 });
+      assert.equal(await page.inputValue('#chat-input'), '草稿还在');
+      await page.fill('#chat-input', '');
+      await clickAct(page, 'chat'); // close it again for the next steps
+    }, () => page);
+
     await step(S, 'while the pet works the controls stay hidden even under the pointer, and actions are refused', async () => {
       await clickAct(page, 'chat');
       await page.fill('#chat-input', '帮我看看下载文件夹里有什么');
