@@ -141,11 +141,23 @@ class LhClient {
     }
   }
 
-  // `lh connect --daemon` forks a background process and returns.
+  // Is the background `lh connect` daemon running? Parses `lh connect status`
+  // ("No daemon is running." or a block with "PID : n" and "Connection : state").
+  async daemonStatus() {
+    const r = await this._run(['connect', 'status'], { timeoutMs: 15000 });
+    const out = r.stdout + r.stderr;
+    const pid = out.match(/PID\s*:\s*(\d+)/);
+    const conn = out.match(/Connection\s*:\s*(\S+)/);
+    return { running: !!pid, pid: pid ? Number(pid[1]) : null, connection: conn ? conn[1] : null };
+  }
+
+  // `lh connect --daemon` forks a background process and returns. It exits 1 with
+  // "already running" when one exists, which for our purposes is success.
   async startConnectDaemon() {
     if (process.env.PIXELPET_NO_CONNECT === '1') throw new LhError('lh connect is disabled in this environment (PIXELPET_NO_CONNECT=1)', { code: 'ENOCONNECT' });
     const r = await this._run(['connect', '--daemon'], { timeoutMs: 45000 });
-    if (r.code !== 0) throw new LhError(`lh connect failed: ${(r.stderr || r.stdout).trim().slice(0, 300)}`, { code: r.code, stderr: r.stderr });
+    const out = r.stdout + r.stderr;
+    if (r.code !== 0 && !/already running/i.test(out)) throw new LhError(`lh connect failed: ${out.trim().slice(0, 300)}`, { code: r.code, stderr: r.stderr });
   }
 
   // ---- images ---------------------------------------------------------------

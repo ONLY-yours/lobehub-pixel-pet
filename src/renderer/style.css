@@ -83,3 +83,6 @@ body.dragging-file #pet-screen { outline: 3px dashed #c9502a; outline-offset: -4
 .opt { display: flex; gap: 6px; align-items: flex-start; max-width: 520px; margin-top: 6px; font-size: 12px; line-height: 1.4; color: #4a3f58; text-align: left; }
 .opt input { margin-top: 2px; }
 .opt .warn { color: #b0203a; }
+
+.attach-chip.file { width: auto; max-width: 96px; height: 24px; padding: 0 14px 0 4px; display: flex; align-items: center; gap: 3px; font-size: 10px; white-space: nowrap; background: #fff; }
+.attach-chip.file .nm { overflow: hidden; text-overflow: ellipsis; }

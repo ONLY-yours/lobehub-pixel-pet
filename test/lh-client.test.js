@@ -102,3 +102,18 @@ test('run failures are classified so the UI can say what went wrong', async () =
     await assert.rejects(() => lh.run({ agentId: 'agt_1', prompt: 'x', timeoutMs: 600 }), (e) => e.code === code && re.test(e.message), mode);
   }
 });
+
+test('daemon status is parsed, and starting a daemon that is already running counts as success', async () => {
+  const { lh } = setup();
+  assert.deepEqual(await lh.daemonStatus(), { running: false, pid: null, connection: null });
+  await lh.startConnectDaemon();
+  const st = await lh.daemonStatus();
+  assert.deepEqual({ running: st.running, pid: st.pid, connection: st.connection }, { running: true, pid: 4242, connection: 'connected' });
+  await lh.startConnectDaemon(); // the real CLI exits 1 with "already running"; that must not throw
+});
+
+test('a real failure to start the daemon still throws', async () => {
+  const { lh } = setup();
+  lh.env.FAKE_LH_CONNECT_FAIL = '1';
+  await assert.rejects(() => lh.startConnectDaemon(), /lh connect failed/);
+});

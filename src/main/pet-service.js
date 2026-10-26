@@ -25,6 +25,7 @@ class PetService extends EventEmitter {
     this._localCheckedAt = 0;
     this._localFailedAt = 0;
     this.localError = null;
+    this.localWarning = null;
   }
 
   init() {
@@ -42,7 +43,7 @@ class PetService extends EventEmitter {
       progress: state.toStageProgress(this.pet),
       species: { id: sp.id, name: sp.name, nameZh: sp.nameZh, element: sp.element },
       busy: this.busy,
-      local: { enabled: !!this.pet.localAbilities, ok: this._localOk, error: this.localError },
+      local: { enabled: !!this.pet.localAbilities, ok: this._localOk, error: this.localError, warning: this.localWarning },
     };
   }
 
@@ -84,6 +85,7 @@ class PetService extends EventEmitter {
     this._save();
 
     let localError = null;
+    let localWarning = null;
     if (localAbilities) {
       onStep('connecting-device');
       this.pet.localAbilities = true;
@@ -91,13 +93,13 @@ class PetService extends EventEmitter {
       if (!this._localOk) {
         this.pet.localAbilities = false;
         localError = this.localError;
-      }
+      } else localWarning = this.localWarning;
       this._save();
     }
 
     onStep('hatching');
     await this._speak('hatched');
-    return { view: this.view(), localError };
+    return { view: this.view(), localError, localWarning };
   }
 
   // ---- keeping an existing agent up to date ---------------------------------------------
@@ -124,7 +126,7 @@ class PetService extends EventEmitter {
       if (!this._localOk && this._localFailedAt && t - this._localFailedAt < LOCAL_RETRY_MS) return;
     }
     try {
-      const { deviceId, via } = await ensureLocalDevice(this.lh);
+      const { deviceId, via, daemon } = await ensureLocalDevice(this.lh);
       if (this.pet.boundDeviceId !== deviceId) {
         await this.lh.updateAgent({ agentId: this.pet.agentId, agencyConfig: bindConfig(deviceId) });
         this.pet.boundDeviceId = deviceId;
@@ -133,6 +135,7 @@ class PetService extends EventEmitter {
       this._localCheckedAt = t;
       this._localFailedAt = 0;
       this.localError = null;
+      this.localWarning = daemon && daemon.error ? `lh connect 没能启动（${String(daemon.error).slice(0, 80)}），先用已在线的设备。` : null;
       this.localVia = via;
     } catch (e) {
       this._localOk = false;
@@ -220,29 +223,36 @@ class PetService extends EventEmitter {
     }
   }
 
-  // `images` are local file paths (already validated by the caller). The picture goes into the
-  // topic as its own user message, then the agent run answers it with the picture in context.
-  async chat(text, images = []) {
+  // `images`: local picture files to upload so the model can see them (pasted screenshots).
+  // `files`: paths of dropped files/folders; they are NOT uploaded: the agent reads them through
+  // the bound device, so local abilities must be on.
+  async chat(text, images = [], files = []) {
     const clean = String(text || '').trim();
-    if (!this.pet || (!clean && images.length === 0)) return { ok: false, reason: 'empty' };
+    const paths = (Array.isArray(files) ? files : []).filter((f) => typeof f === 'string' && f).slice(0, 10);
+    if (!this.pet || (!clean && images.length === 0 && paths.length === 0)) return { ok: false, reason: 'empty' };
     if (this.busy) return { ok: false, reason: 'busy' };
+    if (paths.length && !this.pet.localAbilities) return { ok: false, reason: 'local-off' };
     const t = this.now();
     this.busy = true;
     this.emit('thinking', true);
     try {
       state.touch(this.pet, t);
       await this._ensureReady();
-      let prompt;
+      if (paths.length && !this._localOk) return { ok: false, reason: 'local-error', message: this.localError };
+      const local = this._tools().length > 0;
+      let body;
       if (images.length) {
         const fileIds = [];
         for (const img of images) fileIds.push(await this.lh.uploadFile(img));
         if (!this.pet.topicId) this.pet.topicId = await this.lh.createTopic(this.pet.agentId, this.pet.name);
         const mid = await this.lh.createUserMessage({ agentId: this.pet.agentId, topicId: this.pet.topicId, content: clean || '（发了一张图片）' });
         await this.lh.addFilesToMessage(mid, fileIds);
-        prompt = persona.buildChatPrompt(`[图片] 主人刚发来 ${images.length} 张图片${clean ? '和上面那句话' : ''}（就在上一条消息里），请先看图，再直接回应。`, this.pet, t, { local: this._tools().length > 0 });
+        body = `[图片] 主人刚发来 ${images.length} 张图片${clean ? '和上面那句话' : ''}（就在上一条消息里），请先看图，再直接回应。`;
+        if (paths.length) body += `\n${persona.buildFilesBlock(paths, true)}`;
       } else {
-        prompt = persona.buildChatPrompt(clean, this.pet, t, { local: this._tools().length > 0 });
+        body = [clean, paths.length ? persona.buildFilesBlock(paths, !!clean) : ''].filter(Boolean).join('\n');
       }
+      const prompt = persona.buildChatPrompt(body, this.pet, t, { local });
       const res = await this.lh.run({ agentId: this.pet.agentId, topicId: this.pet.topicId, prompt, tools: this._tools() });
       if (res.topicId) this.pet.topicId = res.topicId;
       const { evolved } = state.chatted(this.pet, this.now());

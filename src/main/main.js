@@ -94,7 +94,7 @@ function wire() {
   ipcMain.handle('whoami', () => service.lh.whoami());
   ipcMain.handle('hatch', async (_e, { speciesId, name, localAbilities }) => {
     try {
-      const { view, localError } = await service.hatch({
+      const { view, localError, localWarning } = await service.hatch({
         speciesId,
         name,
         localAbilities: !!localAbilities,
@@ -106,16 +106,18 @@ function wire() {
         },
       });
       // the window shrinks to pet size when the renderer enters the pet screen (see 'place')
-      return { ok: true, view, localError };
+      return { ok: true, view, localError, localWarning };
     } catch (e) {
       return { ok: false, error: e.message };
     }
   });
   ipcMain.handle('act', (_e, { kind, food }) => service.act(kind, food));
-  ipcMain.handle('chat', async (_e, { text, images }) => {
+  ipcMain.handle('chat', async (_e, { text, images, files }) => {
     const { paths, cleanup } = saveImages(images);
+    // Dropped files are passed by path only (never read or uploaded here): must be absolute and exist.
+    const filePaths = (Array.isArray(files) ? files : []).filter((f) => typeof f === 'string' && path.isAbsolute(f) && fs.existsSync(f)).slice(0, 10);
     try {
-      return await service.chat(text, paths);
+      return await service.chat(text, paths, filePaths);
     } finally {
       cleanup();
     }

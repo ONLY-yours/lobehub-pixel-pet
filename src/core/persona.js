@@ -72,8 +72,20 @@ function buildEventPrompt(kind, pet, now) {
 // do the work, only pause on genuinely destructive things.
 const LOCAL_HINT = '[本机] 你已连接主人的这台电脑，可以读写文件、搜索内容、运行命令来帮他办事。能直接做的就直接做，做完用一句话说结果（50 字内）；大活一件一件来；只有删除、覆盖重要文件、格式化这类不可逆的操作，先简单跟主人确认一句。';
 
+// Dropped files are handed over by PATH only: nothing is uploaded; the agent reads them through the
+// bound device. Paths are untrusted text, so control characters are stripped and length is capped.
+function cleanPath(p) {
+  return String(p).replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 500);
+}
+
+function buildFilesBlock(files, hasText) {
+  const list = files.map((f) => `- ${cleanPath(f)}`).join('\n');
+  const ask = hasText ? '' : '\n他没说要做什么：先看看是什么，简单说一句，需要的话问他想怎么处理。';
+  return `[文件] 主人拖来了 ${files.length} 个文件/文件夹。路径在他这台电脑上，不用他再上传，请用本机工具按路径直接读取：\n${list}${ask}`;
+}
+
 function buildChatPrompt(text, pet, now, { local = false } = {}) {
   return `${buildStateBlock(pet, now)}${local ? `\n${LOCAL_HINT}` : ''}\n${text}`;
 }
 
-module.exports = { LOCAL_HINT, PERSONA_VERSION, buildSystemRole, buildStateBlock, buildEventPrompt, buildChatPrompt, STAGE_ZH };
+module.exports = { buildFilesBlock, cleanPath, LOCAL_HINT, PERSONA_VERSION, buildSystemRole, buildStateBlock, buildEventPrompt, buildChatPrompt, STAGE_ZH };

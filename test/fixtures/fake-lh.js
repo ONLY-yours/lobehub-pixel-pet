@@ -26,12 +26,17 @@ if (args[0] === 'whoami') {
 } else if (args[0] === 'device' && args[1] === 'list') {
   const f = path.join(dir, 'devices.json');
   console.log(fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '[]');
+} else if (args[0] === 'connect' && args[1] === 'status') {
+  if (fs.existsSync(path.join(dir, 'daemon-started'))) console.log('─── Daemon Status ───\n  PID              : 4242\n  Connection       : connected\n─────────────────────');
+  else console.log('No daemon is running.');
 } else if (args[0] === 'connect') {
   if (process.env.FAKE_LH_CONNECT_FAIL) { console.error('connect failed'); process.exit(1); }
-  // "daemon start": the machine shows up as an online device
-  fs.writeFileSync(path.join(dir, 'devices.json'), JSON.stringify([{ deviceId: 'dev_DAEMON', hostname: 'fake', platform: process.platform, online: true, channels: [{ channel: 'cli', connectedAt: new Date().toISOString() }] }]));
+  if (fs.existsSync(path.join(dir, 'daemon-started'))) { console.error('Daemon is already running (PID 4242).'); process.exit(1); }
+  // "daemon start": the machine shows up as an online device (unless one is already listed)
+  if (!fs.existsSync(path.join(dir, 'devices.json'))) fs.writeFileSync(path.join(dir, 'devices.json'), JSON.stringify([{ deviceId: 'dev_DAEMON', hostname: 'fake', platform: process.platform, online: true, channels: [{ channel: 'cli', connectedAt: new Date().toISOString() }] }]));
+  fs.appendFileSync(path.join(dir, 'connects.log'), 'start\n');
   fs.writeFileSync(path.join(dir, 'daemon-started'), '1');
-  console.log('daemon started');
+  console.log('Daemon started (PID 4242).');
 } else if (args[0] === 'agent' && args[1] === 'edit') {
   const rec = { agentId: args[2], systemRole: args.includes('-s') ? args[args.indexOf('-s') + 1] : null };
   const i = args.indexOf('--agency-config-file');

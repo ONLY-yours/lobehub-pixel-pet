@@ -49,7 +49,7 @@ async function launch(env) {
   app.stderrBuf = '';
   app.process().stderr.on('data', (d) => { app.stderrBuf += d; });
   const page = await app.firstWindow();
-  page.on('dialog', (d) => d.accept());
+  page.on('dialog', (d) => { page.lastDialog = d.message(); d.accept(); });
   return { app, page };
 }
 
@@ -57,6 +57,17 @@ async function launch(env) {
 const hover = async (page) => { await page.mouse.move(110, 150); await page.waitForSelector('body.hover', { timeout: 5000 }); };
 const clickAct = async (page, act) => { await hover(page); await page.click(`[data-act="${act}"]`); };
 const hudOpacity = (page) => page.evaluate(() => getComputedStyle(document.getElementById('hud')).opacity);
+// Hands real on-disk files to the page as a drop: an <input type=file> gives File objects that carry real
+// paths, so webUtils.getPathForFile resolves them exactly like a file dragged from Finder.
+async function dropFiles(page, paths) {
+  await page.evaluate(() => { document.getElementById('__drop') || document.body.insertAdjacentHTML('beforeend', '<input id="__drop" type="file" multiple style="position:fixed;left:-999px">'); });
+  await page.setInputFiles('#__drop', paths);
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    for (const f of document.getElementById('__drop').files) dt.items.add(f);
+    document.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+}
 const bubbleSource = (page) => page.evaluate(() => document.getElementById('bubble').dataset.source);
 const bubbleText = (page) => page.evaluate(() => { const b = document.getElementById('bubble'); return b.classList.contains('hidden') ? '' : b.textContent; });
 async function waitReply(page, timeout = 90000) {
@@ -111,7 +122,7 @@ async function fresh() {
     await step(S, 'CLI call order was whoami -> login -> agent create -> connect device -> bind -> agent run', async () => {
       const calls = fs.readFileSync(path.join(fakeDir, 'calls.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).args);
       const seq = calls.map((a) => (a[0] === 'agent' ? `agent ${a[1]}` : a[0]));
-      const want = ['whoami', 'login', 'whoami', 'agent create', 'device', 'connect', 'device', 'agent edit', 'agent run']; // 'device' = `device list`
+      const want = ['whoami', 'login', 'whoami', 'agent create', 'connect', 'connect', 'device', 'agent edit', 'agent run']; // connect = status check, then `connect --daemon`; device = `device list`
       assert.deepEqual(seq.slice(0, want.length), want);
       const created = JSON.parse(fs.readFileSync(path.join(fakeDir, 'last-create.json'), 'utf8'));
       assert.match(created.systemRole, /泡鲸/);
@@ -328,6 +339,91 @@ async function busy() {
       edits = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').map(JSON.parse).filter((e) => e.agencyConfig);
       assert.equal(edits.at(-1).agencyConfig.boundDeviceId, 'dev_DAEMON');
     }, () => page);
+
+    const dropDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-drop-'));
+    const f1 = path.join(dropDir, '报销单 2026.txt');
+    const f2 = path.join(dropDir, 'notes.md');
+    fs.writeFileSync(f1, 'hello');
+    fs.writeFileSync(f2, 'world');
+
+    await step(S, 'dropping files hands their paths to the pet without uploading anything', async () => {
+      const before = calls().length;
+      await hover(page);
+      await dropFiles(page, [f1, f2]);
+      await page.waitForFunction(() => document.querySelectorAll('#attach-row .attach-chip.file').length === 2, null, { timeout: 5000 });
+      const names = await page.$$eval('#attach-row .attach-chip.file .nm', (els) => els.map((e) => e.textContent));
+      assert.deepEqual(names.sort(), ['notes.md', '报销单 2026.txt']);
+      await page.screenshot({ path: path.join(OUT, 'drop-chips.png') });
+      await page.fill('#chat-input', '帮我看看这两个文件');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await idle();
+      const fresh = calls().slice(before).map((a) => `${a[0]} ${a[1]}`);
+      assert.ok(!fresh.includes('file upload'), `uploaded something: ${fresh.join(', ')}`);
+      assert.ok(fresh.includes('agent run'));
+      const run = fs.readFileSync(path.join(fakeDir, 'runs.log'), 'utf8').trim().split('\n').map(JSON.parse).pop();
+      assert.ok(run.prompt.includes(f1) && run.prompt.includes(f2), 'paths missing from the prompt');
+      assert.deepEqual(run.tools, ['lobe-local-system']);
+      assert.equal(await page.locator('#attach-row .attach-chip').count(), 0);
+    }, () => page);
+
+    await step(S, 'dropping a file while computer access is off asks to turn it on, then goes ahead', async () => {
+      assert.equal((await page.evaluate(() => window.pet.setLocal(false))).ok, true);
+      await page.waitForFunction(() => !document.body.classList.contains('busy'));
+      const before = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').length;
+      page.lastDialog = '';
+      await hover(page);
+      await dropFiles(page, [f2]);
+      await page.waitForSelector('#attach-row .attach-chip.file', { timeout: 5000 });
+      await page.fill('#chat-input', '读一下');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await idle();
+      assert.match(page.lastDialog, /本机能力/);
+      const edits = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.ok(edits.length > before);
+      assert.equal(edits.at(-1).agencyConfig.boundDeviceId, 'dev_DAEMON');
+      assert.ok(fs.readFileSync(path.join(fakeDir, 'runs.log'), 'utf8').includes(f2));
+    }, () => page);
+  } finally {
+    await app.close().catch(() => {});
+  }
+}
+
+// The daemon must be up whenever the app is: relaunching with an existing pet starts it again.
+async function daemonlaunch() {
+  const S = 'daemon';
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dmn-'));
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dmnfake-'));
+  fs.writeFileSync(path.join(fakeDir, 'loggedin'), '1');
+  const env = { PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir };
+  let { app, page } = await launch(env);
+  const starts = () => (fs.existsSync(path.join(fakeDir, 'connects.log')) ? fs.readFileSync(path.join(fakeDir, 'connects.log'), 'utf8').trim().split('\n').length : 0);
+  try {
+    await page.waitForSelector('.egg-card');
+    await page.locator('.egg-card').nth(2).click();
+    await page.click('#hatch-btn');
+    await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 30000 });
+    await step(S, 'claiming a pet starts lh connect --daemon', async () => {
+      assert.equal(starts(), 1);
+      assert.ok(fs.existsSync(path.join(fakeDir, 'daemon-started')));
+    });
+    await step(S, 'relaunching the app starts the daemon again if it is gone', async () => {
+      await app.close();
+      fs.rmSync(path.join(fakeDir, 'daemon-started'));
+      fs.rmSync(path.join(fakeDir, 'devices.json'));
+      ({ app, page } = await launch(env));
+      await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 15000 });
+      for (let i = 0; i < 40 && starts() < 2; i++) await new Promise((r) => setTimeout(r, 500));
+      assert.equal(starts(), 2);
+    });
+    await step(S, 'relaunching while the daemon is already running does not start a second one', async () => {
+      await app.close();
+      ({ app, page } = await launch(env));
+      await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 15000 });
+      await new Promise((r) => setTimeout(r, 6000)); // warm-up runs ~1.5s after launch
+      assert.equal(starts(), 2);
+    });
   } finally {
     await app.close().catch(() => {});
   }
@@ -554,7 +650,7 @@ async function art() {
 (async () => {
   if (which === 'fresh' || which === 'all') await fresh();
   if (which === 'dafeiyu' || which === 'all') await dafeiyu();
-  if (which === 'busy' || which === 'all') { await busy(); await longreply(); }
+  if (which === 'busy' || which === 'all') { await busy(); await longreply(); await daemonlaunch(); }
   if (which === 'live' || which === 'all') await live();
   if (which === 'art' || which === 'all') await art();
   // Scenarios can be run separately; keep earlier results for the ones not run this time.

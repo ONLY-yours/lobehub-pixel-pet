@@ -23,7 +23,7 @@ let revealSpecies = null;
 let bubbleTimer = null;
 let bubbleHold = false; // pointer over the bubble: keep it open so a long reply can be scrolled and read
 let thinkTimer = null;
-let attachments = []; // [{ dataUrl, name }] waiting to be sent with the next chat message
+let attachments = []; // [{ kind:'image', dataUrl, name } | { kind:'path', path, name }] waiting for the next message
 let oneShot = null; // { key, until } temporary video clip (pat, play, evolve, hatch)
 let pointerInside = false;
 let nextLook = 0;
@@ -164,6 +164,7 @@ async function startHatch() {
   setTimeout(() => {
     enterPet(res.view);
     if (res.localError) setTimeout(() => say(`（没能连上这台电脑，文件功能先关着：${String(res.localError).slice(0, 60)}）`, 'error', 'fallback', res.localError), 600);
+    else if (res.localWarning) setTimeout(() => say(`（${res.localWarning}）`, 'error', 'fallback', res.localWarning), 600);
   }, sp.art === 'video' ? 2800 : 1500);
 }
 
@@ -320,14 +321,22 @@ function bindPetUi() {
     const input = $('chat-input');
     const text = input.value.trim();
     if ((!text && attachments.length === 0) || thinking) return;
-    const imgs = attachments;
+    const imgs = attachments.filter((a) => a.kind === 'image');
+    const files = attachments.filter((a) => a.kind === 'path').map((a) => a.path);
+    if (files.length && !(view && view.local && view.local.enabled)) {
+      if (!confirm('读本机文件需要先开启“本机能力”（让宠物使用这台电脑）。现在开启吗？')) return;
+      const on = await window.pet.setLocal(true);
+      if (!on.ok) { say(`（没能开启本机能力：${String(on.message || '未知原因').slice(0, 60)}）`, 'error', 'fallback', on.message); return; }
+    }
     attachments = [];
     renderAttachments();
     input.value = '';
     $('chat-send').disabled = true;
-    const r = await window.pet.chat(text, imgs);
+    const r = await window.pet.chat(text, imgs, files);
     $('chat-send').disabled = false;
     if (!r.ok && r.reason === 'error') say(errorLine(r), 'error', 'error', r.message);
+    if (!r.ok && r.reason === 'local-error') say(`（这台电脑现在连不上，读不了文件：${String(r.message || '').slice(0, 60)}）`, 'error', 'fallback', r.message);
+    if (!r.ok && r.reason === 'local-off') say('（要先开启本机能力才能读文件。）', 'error', 'fallback');
     if (!r.ok && r.reason === 'canceled') say('（好吧，不想了。）', 'canceled', 'fallback');
     if (!r.ok && r.reason === 'busy') say('等等，我还在想上一句……', 'busy');
   };
@@ -336,26 +345,26 @@ function bindPetUi() {
 
   // ---- pictures: paste (Ctrl/⌘+V), drag in, or the 📎 button; Escape stops a running task
   document.addEventListener('paste', (e) => {
-    const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter((f) => f.type.startsWith('image/'));
+    const files = [...((e.clipboardData && e.clipboardData.files) || [])];
     if (!files.length || $('pet-screen').classList.contains('hidden')) return;
     e.preventDefault();
     if (thinking) return;
     openChat();
-    files.forEach(addImageFile);
+    routeFiles(files);
   });
   document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer ? e.dataTransfer.types : [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dragging-file'); } });
   document.addEventListener('dragleave', () => document.body.classList.remove('dragging-file'));
   document.addEventListener('drop', (e) => {
     document.body.classList.remove('dragging-file');
-    const files = [...((e.dataTransfer && e.dataTransfer.files) || [])].filter((f) => f.type.startsWith('image/'));
-    if (!files.length || thinking) return;
+    const files = [...((e.dataTransfer && e.dataTransfer.files) || [])];
+    if (!files.length || thinking || $('pet-screen').classList.contains('hidden')) return;
     e.preventDefault();
     openChat();
-    files.forEach(addImageFile);
+    routeFiles(files);
   });
   $('attach-btn').addEventListener('click', async () => {
     const picked = await window.pet.pickImages();
-    for (const img of picked) pushAttachment(img);
+    for (const img of picked) pushAttachment({ kind: 'image', ...img });
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && thinking) window.pet.cancel(); });
   $('bubble').addEventListener('mouseenter', () => { bubbleHold = true; });
@@ -397,7 +406,8 @@ function bindHover() {
   new MutationObserver(syncHover).observe($('hud'), { subtree: true, attributes: true, attributeFilter: ['class'] });
 }
 
-// ---------- pictures to send ----------
+// ---------- pictures and files to send ----------
+const MAX_ATTACH = 10;
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -407,26 +417,40 @@ function openChat() {
   $('chat-input').focus();
 }
 
-function pushAttachment(img) {
-  if (attachments.length >= MAX_IMAGES) { say(`（一次最多 ${MAX_IMAGES} 张图。）`, 'limit', 'fallback'); return; }
-  attachments.push(img);
+function pushAttachment(a) {
+  if (attachments.length >= MAX_ATTACH) { say(`（一次最多 ${MAX_ATTACH} 个。）`, 'limit', 'fallback'); return; }
+  if (a.kind === 'path' && attachments.some((x) => x.path === a.path)) return;
+  if (a.kind === 'image' && attachments.filter((x) => x.kind === 'image').length >= MAX_IMAGES) { say(`（图片一次最多 ${MAX_IMAGES} 张。）`, 'limit', 'fallback'); return; }
+  attachments.push(a);
   renderAttachments();
 }
 
 function addImageFile(file) {
   if (file.size > MAX_IMAGE_BYTES) { say('（这张图太大了，换一张小于 8MB 的吧。）', 'limit', 'fallback'); return; }
   const reader = new FileReader();
-  reader.onload = () => pushAttachment({ dataUrl: reader.result, name: file.name || 'pasted.png' });
+  reader.onload = () => pushAttachment({ kind: 'image', dataUrl: reader.result, name: file.name || 'pasted.png' });
   reader.readAsDataURL(file);
+}
+
+// A dropped or pasted File that lives on disk is handed over by PATH (nothing is uploaded; the agent
+// reads it through the bound device). Data without a path (a screenshot on the clipboard) is an
+// image to upload so the model can see it.
+function routeFiles(files) {
+  for (const f of files) {
+    const p = window.pet.pathForFile(f);
+    if (p) pushAttachment({ kind: 'path', path: p, name: p.split(/[\\/]/).filter(Boolean).pop() || f.name });
+    else if (f.type.startsWith('image/')) addImageFile(f);
+  }
 }
 
 function renderAttachments() {
   const row = $('attach-row');
   row.innerHTML = '';
-  attachments.forEach((img, i) => {
+  attachments.forEach((a, i) => {
     const chip = document.createElement('div');
-    chip.className = 'attach-chip';
-    chip.style.backgroundImage = `url(${img.dataUrl})`;
+    chip.className = a.kind === 'image' ? 'attach-chip' : 'attach-chip file';
+    if (a.kind === 'image') chip.style.backgroundImage = `url(${a.dataUrl})`;
+    else { chip.title = a.path; chip.innerHTML = `<span class="ico">📄</span><span class="nm"></span>`; chip.querySelector('.nm').textContent = a.name; }
     const x = document.createElement('button');
     x.textContent = '×';
     x.title = '移除';

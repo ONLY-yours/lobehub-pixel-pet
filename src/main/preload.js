@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const on = (channel) => (cb) => {
   const h = (_e, p) => cb(p);
@@ -13,7 +13,9 @@ contextBridge.exposeInMainWorld('pet', {
   whoami: () => ipcRenderer.invoke('whoami'),
   hatch: (speciesId, name, localAbilities) => ipcRenderer.invoke('hatch', { speciesId, name, localAbilities }),
   act: (kind, food) => ipcRenderer.invoke('act', { kind, food }),
-  chat: (text, images) => ipcRenderer.invoke('chat', { text, images }),
+  chat: (text, images, files) => ipcRenderer.invoke('chat', { text, images, files }),
+  // Absolute path of a dropped/pasted File (empty for in-memory data such as screenshots).
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } },
   pickImages: () => ipcRenderer.invoke('pick-images'),
   setLocal: (on) => ipcRenderer.invoke('set-local', { on }),
   cancel: () => ipcRenderer.send('cancel'),
