@@ -21,10 +21,10 @@
     "name": "LiJian",
     "email": "onlyyoulove3@gmail.com"
   },
-  "homepage": "https://github.com/ONLY-yours/pixel-pet",
+  "homepage": "https://github.com/ONLY-yours/lobehub-pixel-pet",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ONLY-yours/pixel-pet.git"
+    "url": "git+https://github.com/ONLY-yours/lobehub-pixel-pet.git"
   },
   "build": {
     "appId": "com.onlyyours.pixelpet",
@@ -57,5 +57,8 @@
     "dmg": {
       "title": "Pixel Pet ${version}"
     }
+  },
+  "bugs": {
+    "url": "https://github.com/ONLY-yours/lobehub-pixel-pet/issues"
   }
 }

@@ -1,6 +1,6 @@
-# Pixel Pet
+# LobeHub Pixel Pet
 
-A pixel-art desktop pet whose brain is a [LobeHub](https://lobehub.com) agent.
+A pixel-art desktop pet whose brain is a [LobeHub](https://lobehub.com) agent. It needs a LobeHub account and the LobeHub CLI (`lh`). This is a community project that builds on LobeHub, not an official LobeHub product.
 
 1. First launch: four eggs (fire / water / grass / whale). Pick one.
 2. The app calls the LobeHub CLI: `lh login` (device-code login in your browser, skipped if you are already logged in), then `lh agent create` to make **your** pet's agent, with the species personality baked into its system role.
@@ -22,7 +22,7 @@ The fire, water and grass pets are pixel art generated in code (`src/renderer/sp
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a macOS runner: a **universal** build, so one file runs on both Apple Silicon and Intel.
 
-1. Open the repository's **Releases** page and download `PixelPet-<version>-mac-universal.dmg` (or the `.zip`). The repository is private, so you must be signed in to GitHub.
+1. Open the repository's **Releases** page and download `PixelPet-<version>-mac-universal.dmg` (or the `.zip`).
 2. Drag **Pixel Pet** into Applications.
 3. The app is **not signed or notarized** (no Apple developer certificate), so macOS will refuse the first launch. Either right-click the app and choose **Open**, or run:
    ```bash
@@ -69,6 +69,8 @@ xvfb-run -a node e2e/run.js all       # drives the real Electron app; `live` use
 
 ## Known gaps
 
+- Binding the agent to your computer uses `lh agent edit --agency-config-file`, which old `lh` releases do not have (it is missing in 0.0.44 and earlier). If the log says `unknown option '--agency-config-file'`, update: `npm install -g @lobehub/cli@latest`.
+- Reading and writing local files through the bound device has only been tested with a fake CLI by the author; real behaviour depends on LobeHub's device mechanism.
 - The macOS build is unsigned and has only been built by CI, not opened on a real Mac by the author. Linux and Windows builds are not set up.
 - The real `lh login` browser flow has not been exercised end to end: tests use a fake `lh` that prints the same lines the real CLI does (read from the CLI source).
 - Transparent / always-on-top / drag behaviour on a real desktop has not been visually verified (tests run under Xvfb with an opaque window).
@@ -83,3 +85,7 @@ The **大肥鱼 (Dafeiyu)** animations (`src/renderer/assets/dafeiyu/`) come fro
 - Because of those terms, do not sell this app or ship it commercially while it includes these files. Remove `src/renderer/assets/dafeiyu/` and the `dafeiyu` entry in `src/core/species.js` first.
 
 Full text: `src/renderer/assets/dafeiyu/NOTICE.md`.
+
+## License
+
+The code is MIT, see [LICENSE](LICENSE). The 大肥鱼 animations in `src/renderer/assets/dafeiyu/` are **not** MIT: they are non-commercial only (see [Credits](#credits)), so builds that include them are for non-commercial use.
