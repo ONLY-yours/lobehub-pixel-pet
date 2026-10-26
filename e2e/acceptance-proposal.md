@@ -1,3 +1,3 @@
-This round delivers the first version of Pixel Pet, a pixel-art desktop pet whose brain is a LobeHub agent. On first launch the owner picks one of three eggs; the app starts the LobeHub login if needed, creates the pet as a LobeHub agent with the species personality, and the pet then lives on the desktop with needs, memory, proactive speech and growth.
+这一轮交付 Pixel Pet 桌宠的当前版本：首次启动从四颗蛋里选一颗（新增大肥鱼），应用在需要时发起 LobeHub 登录，把宠物创建成一个带物种人设的 LobeHub agent；宠物窗口很小，平时只显示宠物，鼠标悬停时才出现状态条和按钮；宠物有饥饿、记忆、主动说话和成长。
 
-Please look most closely at the egg screen, the hatching and login progress screen, and the pet screen with its speech bubbles, because they are what the owner sees. The login screen was exercised with a fake CLI, so the real browser login is the main thing still to confirm by hand.
+请重点看三处：选蛋界面、宠物界面（静止与悬停两种状态）、以及大肥鱼的动画。登录界面是用假 CLI 验证的，真实的浏览器登录和 macOS 安装包需要你在 Mac 上手动确认。
