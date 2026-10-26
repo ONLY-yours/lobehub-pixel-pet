@@ -140,3 +140,15 @@ test('care actions change needs and say something', async () => {
   assert.equal(said.at(-1).kind, 'feed');
   assert.equal(svc.act('play').ok, true);
 });
+
+test('a failed chat reports the error code and leaves a consistent, awake pet', async () => {
+  const { svc, dir, lh } = setup();
+  fs.writeFileSync(path.join(dir, 'loggedin'), '1');
+  await svc.hatch({ speciesId: 'bubbo', name: 'B' });
+  svc.pet.sleeping = true;
+  lh.env.FAKE_LH_FAIL_RUN = 'auth';
+  const r = await svc.chat('hi');
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'EAUTH');
+  assert.equal(svc.pet.sleeping, false);
+});

@@ -144,16 +144,22 @@ class LhClient {
 
   // One conversational turn. Reusing `topicId` keeps the pet's long-term
   // history inside LobeHub. Returns { text, topicId, cost }.
-  async run({ agentId, prompt, topicId, timeoutMs = 90000 }) {
+  async run({ agentId, prompt, topicId, timeoutMs = 120000 }) {
+    // No --timeout flag: newer lh releases reject it. We enforce the limit ourselves (see runLh).
     const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json'];
     if (topicId) args.push('-t', topicId);
     const r = await this._run(args, { timeoutMs });
     const parsed = parseRunEvents(r.stdout);
-    if (r.code !== 0 && !parsed.text) {
-      throw new LhError(`Agent run failed (exit ${r.code}): ${(r.stderr || r.stdout).trim().slice(0, 300)}`, { code: r.code, stderr: r.stderr });
+    if (parsed.text) return parsed;
+    const detail = (r.stderr || r.stdout).trim().slice(0, 300);
+    if (/unknown option|unknown command|too many arguments|missing required argument/i.test(detail)) {
+      throw new LhError(`This lh version is not compatible with the app: ${detail}`, { code: 'ECLI', stderr: r.stderr });
     }
-    if (!parsed.text) throw new LhError('Agent produced no reply', { code: r.code, stderr: r.stderr });
-    return parsed;
+    if (/not logged in|unauthori[sz]ed|\b401\b|expired|credential|lh login/i.test(detail)) {
+      throw new LhError(`LobeHub login is missing or expired: ${detail}`, { code: 'EAUTH', stderr: r.stderr });
+    }
+    if (r.code !== 0) throw new LhError(`Agent run failed (exit ${r.code}): ${detail}`, { code: r.code, stderr: r.stderr });
+    throw new LhError('Agent produced no reply', { code: 'ENOREPLY', stderr: r.stderr });
   }
 }
 

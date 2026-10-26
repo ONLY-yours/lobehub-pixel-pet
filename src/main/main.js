@@ -1,6 +1,7 @@
 'use strict';
 
 const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const fs = require('node:fs');
 const path = require('node:path');
 const { LhClient } = require('../core/lh-client');
 const { Store } = require('../core/store');
@@ -23,6 +24,16 @@ function place(mode) {
   const wa = screen.getPrimaryDisplay().workArea;
   if (mode === 'onboarding') win.setBounds({ x: Math.round(wa.x + (wa.width - w) / 2), y: Math.round(wa.y + (wa.height - h) / 2), width: w, height: h });
   else win.setBounds({ x: wa.x + wa.width - w - 24, y: wa.y + wa.height - h - 24, width: w, height: h });
+}
+
+function logFile() {
+  return path.join(app.getPath('userData'), 'pixel-pet.log');
+}
+
+function logError(e) {
+  const line = `${new Date().toISOString()} [${e.code || 'error'}] ${e.message}${e.stderr ? ` | stderr: ${String(e.stderr).trim().slice(0, 500)}` : ''}\n`;
+  console.error('[pixel-pet]', line.trim());
+  try { fs.appendFileSync(logFile(), line); } catch { /* logging must never break the pet */ }
 }
 
 function send(channel, payload) {
@@ -106,7 +117,8 @@ function wire() {
   service.on('say', (m) => send('say', m));
   service.on('thinking', (b) => send('thinking', b));
   service.on('evolved', (s) => send('evolved', s));
-  service.on('error', (e) => console.error('[pixel-pet]', e.message));
+  service.on('error', logError);
+  ipcMain.on('open-log', () => { try { fs.appendFileSync(logFile(), ''); shell.showItemInFolder(logFile()); } catch { /* ignore */ } });
 }
 
 app.whenReady().then(() => {
