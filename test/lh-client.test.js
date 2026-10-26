@@ -1,0 +1,87 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { LhClient, parseRunEvents, cleanEnv } = require('../src/core/lh-client');
+
+const FAKE = path.join(__dirname, 'fixtures', 'fake-lh.js');
+function setup() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fakelh-'));
+  const env = { ...cleanEnv(), FAKE_LH_DIR: dir };
+  return { dir, lh: new LhClient({ bin: FAKE, env }), calls: () => fs.readFileSync(path.join(dir, 'calls.log'), 'utf8').trim().split('\n').map(JSON.parse) };
+}
+
+test('whoami returns null when logged out, user when logged in', async () => {
+  const { dir, lh } = setup();
+  assert.equal(await lh.whoami(), null);
+  fs.writeFileSync(path.join(dir, 'loggedin'), '1');
+  assert.equal((await lh.whoami()).name, 'Test Owner');
+});
+
+test('login surfaces the device URL and code, then confirms identity', async () => {
+  const { lh } = setup();
+  let prompt = null;
+  const user = await lh.login({ onPrompt: (p) => { prompt = p; } });
+  assert.deepEqual(prompt, { url: 'https://example.com/device', code: 'ABCD-1234', browserFailed: false });
+  assert.equal(user.username, 'tester');
+});
+
+test('createAgent passes persona and parses the agent id', async () => {
+  const { dir, lh } = setup();
+  const { agentId } = await lh.createAgent({ title: 'T', description: 'D', systemRole: 'ROLE' });
+  assert.match(agentId, /^agt_FAKE/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'last-create.json'))).systemRole, 'ROLE');
+});
+
+test('run returns the reply and reuses the topic', async () => {
+  const { lh, calls } = setup();
+  const r1 = await lh.run({ agentId: 'agt_1', prompt: 'hi' });
+  assert.equal(r1.text, 'echo: hi');
+  assert.equal(r1.topicId, 'tpc_FAKE1');
+  await lh.run({ agentId: 'agt_1', prompt: 'again', topicId: 'tpc_ZZ' });
+  const last = calls().filter((c) => c.args[1] === 'run').pop();
+  assert.ok(last.args.includes('-t') && last.args.includes('tpc_ZZ'));
+});
+
+test('run surfaces CLI failures as errors', async () => {
+  const { lh } = setup();
+  lh.env.FAKE_LH_FAIL_RUN = '1';
+  await assert.rejects(() => lh.run({ agentId: 'agt_1', prompt: 'x' }), /Agent run failed/);
+});
+
+test('missing binary gives a helpful error', async () => {
+  const lh = new LhClient({ bin: '/nonexistent/lh' });
+  await assert.rejects(() => lh.whoami(), /not found/);
+});
+
+test('inherited run-context variables are stripped from the child env', () => {
+  const env = cleanEnv({ LOBEHUB_TOPIC_ID: 't', LOBEHUB_AGENT_ID: 'a', LOBEHUB_OPERATION_ID: 'o', LOBEHUB_ASSISTANT_MESSAGE_ID: 'm', KEEP: '1' });
+  assert.deepEqual(env, { KEEP: '1' });
+});
+
+test('parseRunEvents tolerates garbage and picks the final content', () => {
+  assert.equal(parseRunEvents('nope').text, '');
+  const out = parseRunEvents(JSON.stringify([{ type: 'stream_end', data: { finalContent: ' hi ' } }]));
+  assert.equal(out.text, 'hi');
+});
+
+test('login handles a code that arrives in a later chunk and non-hyphenated codes', async () => {
+  const { lh } = setup();
+  lh.env.FAKE_LH_CODE = 'XYZ789';
+  const prompts = [];
+  await lh.login({ onPrompt: (p) => prompts.push(p) });
+  assert.equal(prompts.length, 1);
+  assert.deepEqual({ url: prompts[0].url, code: prompts[0].code }, { url: 'https://example.com/device', code: 'XYZ789' });
+});
+
+test('login reports when the CLI could not open a browser so the app can open it', async () => {
+  const { lh } = setup();
+  lh.env.FAKE_LH_NO_BROWSER = '1';
+  lh.env.FAKE_LH_LOGIN_MS = '800'; // stay alive long enough to print the warning
+  const prompts = [];
+  await lh.login({ onPrompt: (p) => prompts.push(p) });
+  assert.equal(prompts[0].browserFailed, false);
+  assert.equal(prompts.at(-1).browserFailed, true);
+});

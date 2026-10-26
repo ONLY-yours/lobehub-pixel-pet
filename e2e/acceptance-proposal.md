@@ -1,0 +1,3 @@
+This round delivers the first version of Pixel Pet, a pixel-art desktop pet whose brain is a LobeHub agent. On first launch the owner picks one of three eggs; the app starts the LobeHub login if needed, creates the pet as a LobeHub agent with the species personality, and the pet then lives on the desktop with needs, memory, proactive speech and growth.
+
+Please look most closely at the egg screen, the hatching and login progress screen, and the pet screen with its speech bubbles, because they are what the owner sees. The login screen was exercised with a fake CLI, so the real browser login is the main thing still to confirm by hand.

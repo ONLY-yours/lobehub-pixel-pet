@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <title>Pixel Pet</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 1. choose an egg -->
+  <section id="onboarding" class="screen hidden">
+    <h1>选择你的第一个伙伴</h1>
+    <p class="sub">三颗蛋，只能带走一颗。</p>
+    <div id="eggs" class="eggs"></div>
+    <div id="egg-info" class="egg-info">点一颗蛋看看。</div>
+    <div class="row">
+      <input id="pet-name" maxlength="12" placeholder="给它起个名字（可选）" autocomplete="off" />
+      <button id="hatch-btn" class="btn primary" disabled>孵化</button>
+    </div>
+  </section>
+
+  <!-- 2. login + create + hatch progress -->
+  <section id="hatching" class="screen hidden">
+    <h1 id="hatch-title">孵化中……</h1>
+    <canvas id="hatch-canvas" width="192" height="192"></canvas>
+    <ol id="steps" class="steps">
+      <li data-step="checking-login">检查 LobeHub 登录</li>
+      <li data-step="login">在浏览器里登录 LobeHub</li>
+      <li data-step="creating-agent">创建你的小精灵（lh agent）</li>
+      <li data-step="hatching">破壳</li>
+    </ol>
+    <div id="login-box" class="login-box hidden">
+      <div id="login-msg">浏览器已打开登录页，请确认验证码：</div>
+      <div id="login-code" class="code">----</div>
+      <div id="login-url" class="url"></div>
+    </div>
+    <div id="hatch-error" class="error hidden"></div>
+    <button id="hatch-retry" class="btn hidden">返回重试</button>
+  </section>
+
+  <!-- 3. the pet -->
+  <section id="pet-screen" class="screen hidden">
+    <div id="bubble" class="bubble hidden"></div>
+    <canvas id="pet-canvas" width="192" height="192"></canvas>
+    <div id="bars" class="bars">
+      <span title="饥饿">🍙 <i id="bar-hunger"></i></span>
+      <span title="心情">♥ <i id="bar-mood"></i></span>
+      <span title="体力">⚡ <i id="bar-energy"></i></span>
+    </div>
+    <div id="meta" class="meta"></div>
+    <div id="chat-row" class="row hidden">
+      <input id="chat-input" maxlength="200" placeholder="跟它说点什么…" autocomplete="off" />
+      <button id="chat-send" class="btn primary">发送</button>
+    </div>
+    <div id="toolbar" class="toolbar">
+      <button class="btn" data-act="feed">喂食</button>
+      <button class="btn" data-act="play">玩耍</button>
+      <button class="btn" data-act="sleep">睡觉</button>
+      <button class="btn" data-act="chat">聊天</button>
+      <button class="btn" data-act="menu">⋯</button>
+    </div>
+    <div id="food-menu" class="popup hidden"></div>
+    <div id="main-menu" class="popup hidden">
+      <button class="btn" data-menu="release">放生并删除 agent</button>
+      <button class="btn" data-menu="forget">仅重置本地</button>
+      <button class="btn" data-menu="quit">退出</button>
+    </div>
+  </section>
+
+  <script src="sprites.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
