@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { LhClient } = require('../core/lh-client');
+const { pointInBounds } = require('../core/pointer');
 const { Store } = require('../core/store');
 const { PetService } = require('./pet-service');
 const { SPECIES, SPECIES_IDS } = require('../core/species');
@@ -174,6 +175,19 @@ app.whenReady().then(() => {
   wire();
   createWindow();
   if (!TEST_MODE) setInterval(() => service.heartbeat().catch((e) => console.error(e)), HEARTBEAT_MS);
+  // Tell the renderer whether the mouse is over the pet, from the OS cursor position (see core/pointer.js).
+  // Tests drive hover with synthetic DOM events instead, so this is off there.
+  if (!TEST_MODE) {
+    let last = null;
+    setInterval(() => {
+      if (!win || win.isDestroyed()) return;
+      const inside = pointInBounds(screen.getCursorScreenPoint(), win.getBounds());
+      if (inside !== last) {
+        last = inside;
+        send('pointer', inside);
+      }
+    }, 100);
+  }
 });
 
 app.on('window-all-closed', () => app.quit());
