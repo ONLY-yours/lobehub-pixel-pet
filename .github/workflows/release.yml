@@ -63,6 +63,10 @@ jobs:
           2. 应用没有苹果开发者签名，首次打开会被拦截：右键点应用选“打开”，或执行 `xattr -cr "/Applications/Pixel Pet.app"`。
           3. 先装 LobeHub CLI：`npm install -g @lobehub/cli`，宠物的大脑通过它运行。
 
+          ## 使用这台电脑（默认勾选，注意权限）
+
+          孵化页的“使用这台电脑”默认开启：应用会在认领和每次启动时确保 `lh connect --daemon` 在后台运行，并把宠物绑定到你的这台电脑。绑定后宠物能读写文件、搜索内容、运行命令，**权限等同你的账号，不是沙盒**；把文件拖给它时只传路径、不上传。不想要的话，孵化时取消勾选，或在“⋯”菜单里随时关闭。
+
           ## 素材说明
 
           “大肥鱼”的动画来自开源项目 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)：素材仅限非商业使用，形象为社区二创（非 DeepSeek 官方），授权 CC BY-NC-SA 4.0。详见 README 的 Credits。请勿商用。
