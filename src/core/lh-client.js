@@ -145,14 +145,16 @@ class LhClient {
   // One conversational turn. Reusing `topicId` keeps the pet's long-term
   // history inside LobeHub. Returns { text, topicId, cost }.
   async run({ agentId, prompt, topicId, timeoutMs = 120000 }) {
-    const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json', '--timeout', String(Math.ceil(timeoutMs / 1000))];
+    // No --timeout flag: newer lh releases reject it. We enforce the limit ourselves (see runLh).
+    const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json'];
     if (topicId) args.push('-t', topicId);
-    const r = await this._run(args, { timeoutMs: timeoutMs + 5000 });
+    const r = await this._run(args, { timeoutMs });
     const parsed = parseRunEvents(r.stdout);
     if (parsed.text) return parsed;
-    // `lh agent run --timeout` exits with 3 when it stopped waiting; the run keeps going server-side.
-    if (r.code === 3) throw new LhError(`Agent run did not finish within ${Math.ceil(timeoutMs / 1000)}s`, { code: 'ETIMEDOUT', stderr: r.stderr });
     const detail = (r.stderr || r.stdout).trim().slice(0, 300);
+    if (/unknown option|unknown command|too many arguments|missing required argument/i.test(detail)) {
+      throw new LhError(`This lh version is not compatible with the app: ${detail}`, { code: 'ECLI', stderr: r.stderr });
+    }
     if (/not logged in|unauthori[sz]ed|\b401\b|expired|credential|lh login/i.test(detail)) {
       throw new LhError(`LobeHub login is missing or expired: ${detail}`, { code: 'EAUTH', stderr: r.stderr });
     }
@@ -180,6 +182,8 @@ function parseRunEvents(stdout) {
   let cost = null;
   for (const e of events) {
     if (e.type === 'agent_runtime_init' && e.data && e.data.topicId) topicId = e.data.topicId;
+    // Newer CLI versions no longer put the topic on the init event; it rides on the assistant message.
+    if (!topicId && e.type === 'stream_start' && e.data && e.data.assistantMessage && e.data.assistantMessage.topicId) topicId = e.data.assistantMessage.topicId;
     if (e.type === 'stream_end' && e.data) {
       if (typeof e.data.finalContent === 'string' && e.data.finalContent.trim()) text = e.data.finalContent.trim();
       if (e.data.usage && typeof e.data.usage.cost === 'number') cost = (cost || 0) + e.data.usage.cost;

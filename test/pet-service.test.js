@@ -146,9 +146,9 @@ test('a failed chat reports the error code and leaves a consistent, awake pet', 
   fs.writeFileSync(path.join(dir, 'loggedin'), '1');
   await svc.hatch({ speciesId: 'bubbo', name: 'B' });
   svc.pet.sleeping = true;
-  lh.env.FAKE_LH_FAIL_RUN = 'timeout';
+  lh.env.FAKE_LH_FAIL_RUN = 'auth';
   const r = await svc.chat('hi');
   assert.equal(r.ok, false);
-  assert.equal(r.code, 'ETIMEDOUT');
+  assert.equal(r.code, 'EAUTH');
   assert.equal(svc.pet.sleeping, false);
 });

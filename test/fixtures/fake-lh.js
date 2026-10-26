@@ -26,7 +26,8 @@ if (args[0] === 'whoami') {
 } else if (args[0] === 'agent' && args[1] === 'delete') {
   console.log('✓ Deleted agent');
 } else if (args[0] === 'agent' && args[1] === 'run') {
-  if (process.env.FAKE_LH_FAIL_RUN === 'timeout') process.exit(3);
+  if (process.env.FAKE_LH_FAIL_RUN === 'timeout') { setTimeout(() => {}, 60000); return; }
+  if (process.env.FAKE_LH_FAIL_RUN === 'badflag') { console.error("error: unknown option '--json'"); process.exit(1); }
   if (process.env.FAKE_LH_FAIL_RUN === 'auth') { console.error('Not logged in. Run `lh login` first.'); process.exit(1); }
   if (process.env.FAKE_LH_FAIL_RUN === 'empty') { console.log('[]'); process.exit(0); }
   if (process.env.FAKE_LH_FAIL_RUN) { console.error('boom'); process.exit(1); }

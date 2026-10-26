@@ -171,6 +171,7 @@ function setThinking(on) {
 function errorLine(r) {
   if (r.code === 'ETIMEDOUT') return '（我想了好久也没想出来……LobeHub 现在好像很慢，晚点再说一次？）';
   if (r.code === 'EAUTH') return '（LobeHub 登录好像过期了，需要重新 lh login）';
+  if (r.code === 'ECLI') return '（lh 版本和应用对不上，试试 lh update，或升级桌宠）';
   if (r.code === 'ENOENT') return '（找不到 lh 命令，请先 npm install -g @lobehub/cli）';
   if (r.code === 'ENOREPLY') return '（我走神了，没想出要说什么……再说一次？）';
   return `（出错了：${String(r.message || '未知错误').slice(0, 70)}）`;

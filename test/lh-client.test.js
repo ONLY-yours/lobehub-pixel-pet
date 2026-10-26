@@ -67,6 +67,15 @@ test('parseRunEvents tolerates garbage and picks the final content', () => {
   assert.equal(out.text, 'hi');
 });
 
+test('parseRunEvents finds the topic on stream_start when init carries none', () => {
+  const out = parseRunEvents(JSON.stringify([
+    { type: 'agent_runtime_init', data: {} },
+    { type: 'stream_start', data: { assistantMessage: { topicId: 'tpc_1' } } },
+    { type: 'stream_end', data: { finalContent: 'yo' } },
+  ]));
+  assert.equal(out.topicId, 'tpc_1');
+});
+
 test('login handles a code that arrives in a later chunk and non-hyphenated codes', async () => {
   const { lh } = setup();
   lh.env.FAKE_LH_CODE = 'XYZ789';
@@ -87,9 +96,9 @@ test('login reports when the CLI could not open a browser so the app can open it
 });
 
 test('run failures are classified so the UI can say what went wrong', async () => {
-  for (const [mode, code, re] of [['timeout', 'ETIMEDOUT', /did not finish/], ['auth', 'EAUTH', /login/i], ['empty', 'ENOREPLY', /no reply/], ['x', 1, /exit 1/]]) {
+  for (const [mode, code, re] of [['timeout', 'ETIMEDOUT', /timed out/], ['auth', 'EAUTH', /login/i], ['badflag', 'ECLI', /not compatible/], ['empty', 'ENOREPLY', /no reply/], ['x', 1, /exit 1/]]) {
     const { lh } = setup();
     lh.env.FAKE_LH_FAIL_RUN = mode;
-    await assert.rejects(() => lh.run({ agentId: 'agt_1', prompt: 'x' }), (e) => e.code === code && re.test(e.message), mode);
+    await assert.rejects(() => lh.run({ agentId: 'agt_1', prompt: 'x', timeoutMs: 600 }), (e) => e.code === code && re.test(e.message), mode);
   }
 });
