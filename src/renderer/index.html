@@ -10,7 +10,7 @@
   <!-- 1. choose an egg -->
   <section id="onboarding" class="screen hidden">
     <h1>选择你的第一个伙伴</h1>
-    <p class="sub">三颗蛋，只能带走一颗。</p>
+    <p class="sub">四颗蛋，只能带走一颗。</p>
     <div id="eggs" class="eggs"></div>
     <div id="egg-info" class="egg-info">点一颗蛋看看。</div>
     <div class="row">
@@ -23,6 +23,7 @@
   <section id="hatching" class="screen hidden">
     <h1 id="hatch-title">孵化中……</h1>
     <canvas id="hatch-canvas" width="192" height="192"></canvas>
+    <div id="hatch-vwrap" class="vwrap hidden"><video id="hatch-video" muted playsinline></video></div>
     <ol id="steps" class="steps">
       <li data-step="checking-login">检查 LobeHub 登录</li>
       <li data-step="login">在浏览器里登录 LobeHub</li>
@@ -41,30 +42,37 @@
   <!-- 3. the pet -->
   <section id="pet-screen" class="screen hidden">
     <div id="bubble" class="bubble hidden"></div>
-    <canvas id="pet-canvas" width="192" height="192"></canvas>
-    <div id="bars" class="bars">
-      <span title="饥饿">🍙 <i id="bar-hunger"></i></span>
-      <span title="心情">♥ <i id="bar-mood"></i></span>
-      <span title="体力">⚡ <i id="bar-energy"></i></span>
+    <div id="stage" class="stage">
+      <canvas id="pet-canvas" class="pet-hit" width="120" height="120"></canvas>
+      <div id="vwrap" class="vwrap pet-hit hidden"><video id="pet-video" muted playsinline></video></div>
     </div>
-    <div id="meta" class="meta"></div>
-    <div id="chat-row" class="row hidden">
-      <input id="chat-input" maxlength="200" placeholder="跟它说点什么…" autocomplete="off" />
-      <button id="chat-send" class="btn primary">发送</button>
-    </div>
-    <div id="toolbar" class="toolbar">
-      <button class="btn" data-act="feed">喂食</button>
-      <button class="btn" data-act="play">玩耍</button>
-      <button class="btn" data-act="sleep">睡觉</button>
-      <button class="btn" data-act="chat">聊天</button>
-      <button class="btn" data-act="menu">⋯</button>
-    </div>
-    <div id="food-menu" class="popup hidden"></div>
-    <div id="main-menu" class="popup hidden">
-      <button class="btn" data-menu="release">放生并删除 agent</button>
-      <button class="btn" data-menu="forget">仅重置本地</button>
-      <button class="btn" data-menu="log">打开错误日志</button>
-      <button class="btn" data-menu="quit">退出</button>
+    <!-- everything below is only shown while the pointer is over the window -->
+    <div id="hud" class="hud">
+      <div id="bars" class="bars">
+        <span title="饥饿">🍙 <i id="bar-hunger"></i></span>
+        <span title="心情">♥ <i id="bar-mood"></i></span>
+        <span title="体力">⚡ <i id="bar-energy"></i></span>
+      </div>
+      <div id="meta" class="meta"></div>
+      <div id="toolbar" class="toolbar">
+        <button class="btn" data-act="feed">喂食</button>
+        <button class="btn" data-act="play">玩耍</button>
+        <button class="btn" data-act="sleep">睡觉</button>
+        <button class="btn" data-act="chat">聊天</button>
+        <button class="btn" data-act="menu">⋯</button>
+      </div>
+      <div id="chat-row" class="row chat-row hidden">
+        <input id="chat-input" maxlength="200" placeholder="跟它说点什么…" autocomplete="off" />
+        <button id="chat-send" class="btn primary">发送</button>
+      </div>
+      <div id="food-menu" class="popup hidden"></div>
+      <div id="main-menu" class="popup hidden">
+        <button class="btn" data-menu="release">放生并删除 agent</button>
+        <button class="btn" data-menu="forget">仅重置本地</button>
+        <button class="btn" data-menu="log">打开错误日志</button>
+        <button class="btn" data-menu="credits">素材署名</button>
+        <button class="btn" data-menu="quit">退出</button>
+      </div>
     </div>
   </section>
 

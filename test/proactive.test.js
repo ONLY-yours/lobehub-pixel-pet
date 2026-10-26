@@ -49,7 +49,7 @@ test('LLM budget caps calls per hour and recovers', () => {
 });
 
 test('every species has fallback lines for every event kind', () => {
-  for (const id of ['embit', 'bubbo', 'sprig']) {
+  for (const id of ['embit', 'bubbo', 'sprig', 'dafeiyu']) {
     for (const kind of ['hungry', 'bored', 'greet_morning', 'greet_evening', 'evolved', 'hatched', 'fed', 'played']) {
       assert.ok(fallbackLine(getSpecies(id), kind).length > 0, `${id}/${kind}`);
     }

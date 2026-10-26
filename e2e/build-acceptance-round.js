@@ -25,9 +25,9 @@ const asset = (file, description) => {
 };
 
 const CHECKS = [
-  { id: 'egg-choice', category: 'First run', title: 'First launch offers three eggs to choose from', steps: ['fresh:first launch shows three eggs'],
-    method: 'Launch the app with no saved pet and look at the first screen.', expected: 'Three pixel-art eggs (fire, water, grass) are shown and hatching is disabled until one is chosen.',
-    ok: 'The first screen shows three distinct pixel eggs labelled fire, water and grass; the Hatch button is disabled.',
+  { id: 'egg-choice', category: 'First run', title: 'First launch offers four eggs to choose from', steps: ['fresh:first launch shows four eggs'],
+    method: 'Launch the app with no saved pet and look at the first screen.', expected: 'Four eggs (fire, water, grass, whale) are shown and hatching is disabled until one is chosen.',
+    ok: 'The first screen shows four distinct pixel eggs labelled fire, water, grass and whale; the Hatch button is disabled.',
     shots: [['01-fresh-first-launch-shows-three-eggs.png', 'First-launch window showing three pixel-art eggs and a disabled Hatch button.']] },
   { id: 'egg-select', category: 'First run', title: 'Choosing an egg highlights it and describes its element', steps: ['fresh:choosing an egg enables hatching'],
     method: 'Click the water egg and type a name.', expected: 'The egg is highlighted, its element and personality blurb appear, the name field accepts input and Hatch becomes enabled.',

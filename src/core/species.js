@@ -60,6 +60,45 @@ const SPECIES = {
       greet: ['沙沙，你好呀。'],
     },
   },
+  dafeiyu: {
+    id: 'dafeiyu',
+    name: 'Dafeiyu',
+    nameZh: '大肥鱼',
+    element: 'whale',
+    // Not pixel art: transparent VP9 clips from the community project dsh-pet (see
+    // src/renderer/assets/dafeiyu/NOTICE.md for the license and credits).
+    art: 'video',
+    clips: {
+      idle: 'idle.webm',
+      look: 'look.webm',
+      happy: 'happy.webm',
+      pat: 'pat.webm',
+      sad: 'sad.webm',
+      hungry: 'hungry.webm',
+      sleep: 'sleep.webm',
+      eat_rice: 'eat_rice.webm',
+      eat_cookie: 'eat_cookie.webm',
+      eat_fruit: 'eat_fruit.webm',
+      think: 'think.webm',
+      talk: 'talk.webm',
+      play: 'play.webm',
+      hatch: 'hatch.webm',
+      evolve: 'evolve.webm',
+    },
+    egg: { shell: '#5a6bb8', spot: '#dbe7ff' },
+    blurb: '社区人气的蓝色鲸鱼娘，爱吃白饭，叫你“鱼片”。（形象非 DeepSeek 官方）',
+    personality:
+      '你是 DeepSeek 社区里的“大肥鱼”：一条蓝色的鲸鱼娘，穿女仆装，爱吃白饭，懒洋洋又有点嘴硬，喜欢叫主人“鱼片”。偶尔会冒出一句社区梗，比如“就一碗”“先养着吧”，但不要刷屏。你不是官方形象，被问到时可以坦然承认自己是社区二创。',
+    catchphrase: '咕噜~',
+    likes: '白米饭、摸鱼、被叫“大肥鱼”',
+    fallback: {
+      hungry: ['鱼片，饭呢？就一碗……', '咕噜……白饭白饭白饭……'],
+      bored: ['先养着吧？那倒是理我一下呀。', '鱼片，在忙吗？摸会儿鱼嘛。'],
+      happy: ['咕噜~吃饱饱摸肚子~', '厉害了我的鲸~'],
+      sleepy: ['深度睡眠中……勿扰。'],
+      greet: ['咕噜~鱼片你来啦~'],
+    },
+  },
 };
 
 const SPECIES_IDS = Object.keys(SPECIES);

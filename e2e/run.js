@@ -53,6 +53,10 @@ async function launch(env) {
   return { app, page };
 }
 
+// The controls only exist visually while the pointer is over the window.
+const hover = async (page) => { await page.mouse.move(110, 150); await page.waitForSelector('body.hover', { timeout: 5000 }); };
+const clickAct = async (page, act) => { await hover(page); await page.click(`[data-act="${act}"]`); };
+const hudOpacity = (page) => page.evaluate(() => getComputedStyle(document.getElementById('hud')).opacity);
 const bubbleSource = (page) => page.evaluate(() => document.getElementById('bubble').dataset.source);
 const bubbleText = (page) => page.evaluate(() => { const b = document.getElementById('bubble'); return b.classList.contains('hidden') ? '' : b.textContent; });
 async function waitReply(page, timeout = 90000) {
@@ -76,9 +80,9 @@ async function fresh() {
   const env = { PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir, FAKE_LH_LOGIN_MS: '2500' };
   let { app, page } = await launch(env);
   try {
-    await step(S, 'first launch shows three eggs', async () => {
+    await step(S, 'first launch shows four eggs', async () => {
       await page.waitForSelector('.egg-card');
-      assert.equal(await page.locator('.egg-card').count(), 3);
+      assert.equal(await page.locator('.egg-card').count(), 4);
       assert.equal(await page.locator('#hatch-btn').isDisabled(), true);
     }, page);
 
@@ -123,9 +127,26 @@ async function fresh() {
       assert.match(await page.textContent('#meta'), /小蓝/);
     }, () => page);
 
+    await step(S, 'at rest only the pet is shown, with no buttons, bars or text box', async () => {
+      assert.equal(await hudOpacity(page), '0');
+      assert.equal(await page.evaluate(() => document.body.classList.contains('hover')), false);
+      const b = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
+      assert.ok(b.width <= 240 && b.height <= 300, `window is ${b.width}x${b.height}`);
+      return `window ${b.width}x${b.height}`;
+    }, () => page);
+
+    await step(S, 'hovering the pet reveals the controls and moving away hides them again', async () => {
+      await hover(page);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '1');
+      await page.screenshot({ path: path.join(OUT, 'hover-shown.png') });
+      await page.mouse.move(-20, -20);
+      await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 5000 });
+    }, () => page);
+
     await step(S, 'feeding lowers hunger and shows food', async () => {
       await page.evaluate(() => window.pet.debugSet({ hunger: 80, sleeping: false, energy: 90 }));
-      await page.click('[data-act="feed"]');
+      await clickAct(page, 'feed');
       await page.click('#food-menu .btn >> nth=0');
       await page.waitForTimeout(500);
       const v = await view(page);
@@ -146,7 +167,7 @@ async function fresh() {
     }, () => page);
 
     await step(S, 'release deletes the agent through lh and returns to egg selection', async () => {
-      await page.click('[data-act="menu"]');
+      await clickAct(page, 'menu');
       await page.click('[data-menu="release"]');
       await page.waitForSelector('#onboarding:not(.hidden)', { timeout: 15000 });
       const calls = fs.readFileSync(path.join(fakeDir, 'calls.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).args);
@@ -154,6 +175,65 @@ async function fresh() {
       assert.ok(del && del[2].startsWith('agt_FAKE') && del.includes('--yes'), 'lh agent delete <id> --yes was not called');
       fs.writeFileSync(path.join(OUT, 'release-check.txt'), `$ ${del.length ? 'lh ' + del.join(' ') : ''}\n(recorded by the fake lh CLI used in this scenario; the app asked for the agent to be deleted, then returned to egg selection)\n`);
     }, () => page);
+  } finally {
+    await app.close().catch(() => {});
+  }
+}
+
+// ------------------------------------------------------------- dafeiyu
+async function dafeiyu() {
+  const S = 'dafeiyu';
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dfy-'));
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-dfyfake-'));
+  fs.writeFileSync(path.join(fakeDir, 'loggedin'), '1');
+  const { app, page } = await launch({ PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir });
+  const clip = () => page.evaluate(() => document.getElementById('pet-video').dataset.key);
+  try {
+    await step(S, 'the egg screen offers four eggs and the fourth is the whale egg', async () => {
+      await page.waitForSelector('.egg-card');
+      assert.equal(await page.locator('.egg-card').count(), 4);
+      assert.match(await page.locator('.egg-card').nth(3).textContent(), /鲸之蛋/);
+      await page.locator('.egg-card').nth(3).click();
+      assert.match(await page.locator('#egg-info').textContent(), /大肥鱼|鱼片/);
+      await page.fill('#pet-name', 'Mow');
+    }, page);
+
+    await step(S, 'hatching plays the 大肥鱼 hatch animation', async () => {
+      await page.click('#hatch-btn');
+      await page.waitForSelector('#hatch-vwrap:not(.hidden)', { timeout: 15000 });
+      await page.waitForFunction(() => { const v = document.getElementById('hatch-video'); return v.readyState >= 2 && !v.paused; }, null, { timeout: 10000 });
+      await page.waitForTimeout(600);
+      assert.match(await page.evaluate(() => document.getElementById('hatch-video').src), /dafeiyu\/hatch\.webm$/);
+    }, page);
+
+    await step(S, 'the pet appears as a transparent video in a small window with no controls showing', async () => {
+      await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 15000 });
+      await page.waitForFunction(() => { const v = document.getElementById('pet-video'); return v.readyState >= 2 && !v.paused && v.videoWidth === 640; }, null, { timeout: 10000 });
+      // right after hatching the pet is "talking" (its greeting), then settles into the idle clip
+      await page.waitForFunction(() => document.getElementById('pet-video').dataset.key === 'idle', null, { timeout: 15000 });
+      assert.equal(await page.locator('#pet-canvas').isHidden(), true);
+      // the pointer is still where the Hatch button was; a real user would move away
+      await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 5000 });
+      const b = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
+      assert.ok(b.width <= 240 && b.height <= 300, `window is ${b.width}x${b.height}`);
+      return `window ${b.width}x${b.height}, clip idle`;
+    }, page);
+
+    await step(S, 'hovering shows the controls; feeding rice plays the eating animation', async () => {
+      await page.evaluate(() => window.pet.debugSet({ hunger: 80, sleeping: false, energy: 90 }));
+      await clickAct(page, 'feed');
+      await page.click('#food-menu .btn >> nth=0');
+      await page.waitForFunction(() => document.getElementById('pet-video').dataset.key === 'eat_rice', null, { timeout: 5000 });
+      await page.waitForTimeout(800);
+    }, page);
+
+    await step(S, 'the agent was created with the 大肥鱼 persona', async () => {
+      const created = JSON.parse(fs.readFileSync(path.join(fakeDir, 'last-create.json'), 'utf8'));
+      assert.match(created.systemRole, /大肥鱼/);
+      assert.match(created.systemRole, /鱼片/);
+      assert.match(created.title, /Mow \(Dafeiyu\)/);
+    });
   } finally {
     await app.close().catch(() => {});
   }
@@ -206,7 +286,7 @@ async function live() {
 
     await step(S, 'feeding lowers hunger and shows food', async () => {
       await page.evaluate(() => window.pet.debugSet({ hunger: 80 }));
-      await page.click('[data-act="feed"]');
+      await clickAct(page, 'feed');
       await page.click('#food-menu .btn >> nth=0');
       await page.waitForTimeout(500);
       const v = await view(page);
@@ -215,7 +295,7 @@ async function live() {
     }, page);
 
     await step(S, 'chat: the pet answers and remembers what it was told (same LobeHub topic)', async () => {
-      await page.click('[data-act="chat"]');
+      await clickAct(page, 'chat');
       await page.fill('#chat-input', '我叫小李，我最喜欢吃面条，记住哦');
       await page.click('#chat-send');
       await page.waitForFunction(() => document.getElementById('bubble').classList.contains('thinking'), null, { timeout: 5000 }).catch(() => {});
@@ -255,7 +335,7 @@ async function live() {
     }, page);
 
     await step(S, 'release deletes the real agent and returns to egg selection', async () => {
-      await page.click('[data-act="menu"]');
+      await clickAct(page, 'menu');
       await page.click('[data-menu="release"]');
       await page.waitForSelector('#onboarding:not(.hidden)', { timeout: 30000 });
       let gone = false;
@@ -308,6 +388,7 @@ async function art() {
 
 (async () => {
   if (which === 'fresh' || which === 'all') await fresh();
+  if (which === 'dafeiyu' || which === 'all') await dafeiyu();
   if (which === 'live' || which === 'all') await live();
   if (which === 'art' || which === 'all') await art();
   // Scenarios can be run separately; keep earlier results for the ones not run this time.

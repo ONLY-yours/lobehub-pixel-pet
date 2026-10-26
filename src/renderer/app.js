@@ -3,6 +3,13 @@
 const S = window.Sprites;
 const $ = (id) => document.getElementById(id);
 const FOOD_SPRITE = { rice: 'rice', cookie: 'cookie', fruit: 'fruit' };
+const CREDITS = [
+  '大肥鱼动画来自开源项目 dsh-pet（PC2005-cloud）：',
+  'https://github.com/PC2005-cloud/dsh-pet',
+  '素材仅限非商业使用；形象为社区二创（非 DeepSeek 官方），',
+  '授权 CC BY-NC-SA 4.0。原型「溟月」：B站 @上善无形；',
+  'DeepSeek 女仆鲸鱼娘设计：B站 @ZipZipPipe。',
+].join('\n');
 
 let info = null; // { species[], foods, testMode }
 let view = null; // latest pet view from main
@@ -14,6 +21,38 @@ let flashUntil = 0;
 let hatchCracks = 0;
 let revealSpecies = null;
 let bubbleTimer = null;
+let oneShot = null; // { key, until } temporary video clip (pat, play, evolve, hatch)
+let pointerInside = false;
+let nextLook = 0;
+
+const speciesOf = (id) => info.species.find((s) => s.id === id);
+const isVideo = (id) => !!id && speciesOf(id) && speciesOf(id).art === 'video';
+
+function playClip(video, sp, key, loop = true) {
+  if (video.dataset.key === key) return;
+  video.dataset.key = key;
+  video.loop = loop;
+  video.src = `assets/${sp.id}/${sp.clips[key]}`;
+  video.play().catch(() => {});
+}
+
+function startOneShot(key, ms) {
+  oneShot = { key, until: performance.now() + ms };
+}
+
+function desiredClip() {
+  const now = performance.now();
+  if (oneShot && now < oneShot.until) return oneShot.key;
+  if (thinking) return 'think';
+  if (eating) return `eat_${eating}`;
+  if (now < talkUntil) return 'talk';
+  if (view.status === 'idle' && now > nextLook) {
+    nextLook = now + 40000 + Math.random() * 20000;
+    startOneShot('look', 5000);
+    return 'look';
+  }
+  return view.status; // idle | happy | sad | hungry | sleep all have a clip
+}
 
 function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('hidden', s.id !== id);
@@ -43,7 +82,7 @@ function buildEggs() {
 }
 
 function elementLabel(el) {
-  return { fire: '🔥 火之蛋', water: '💧 水之蛋', grass: '🌱 草之蛋' }[el] || el;
+  return { fire: '🔥 火之蛋', water: '💧 水之蛋', grass: '🌱 草之蛋', whale: '🐋 鲸之蛋' }[el] || el;
 }
 
 function selectEgg(id) {
@@ -111,14 +150,34 @@ async function startHatch() {
   flashUntil = performance.now() + 700;
   revealSpecies = res.view.pet.speciesId;
   $('hatch-title').textContent = `${res.view.pet.name} 破壳了！`;
-  setTimeout(() => enterPet(res.view), 1500);
+  const sp = speciesOf(revealSpecies);
+  if (sp.art === 'video') {
+    $('hatch-canvas').classList.add('hidden');
+    $('hatch-vwrap').classList.remove('hidden');
+    $('hatch-video').dataset.key = '';
+    playClip($('hatch-video'), sp, 'hatch', false);
+  }
+  setTimeout(() => enterPet(res.view), sp.art === 'video' ? 2800 : 1500);
 }
 
 // ---------- pet ----------
+function applyArt() {
+  const video = isVideo(view && view.pet.speciesId);
+  $('pet-canvas').classList.toggle('hidden', video);
+  $('vwrap').classList.toggle('hidden', !video);
+  if (video) $('vwrap').dataset.stage = view.pet.stage;
+}
+
 function enterPet(v) {
   view = v;
   revealSpecies = null;
+  $('hatch-vwrap').classList.add('hidden');
+  $('hatch-canvas').classList.remove('hidden');
+  oneShot = null;
+  $('pet-video').dataset.key = '';
+  window.pet.place('pet');
   show('pet-screen');
+  applyArt();
   refreshHud();
 }
 
@@ -179,9 +238,14 @@ function errorLine(r) {
 
 async function doAct(kind, food) {
   const r = await window.pet.act(kind, food);
+  const video = isVideo(view && view.pet.speciesId);
   if (kind === 'feed' && r.ok) {
     eating = FOOD_SPRITE[food] || 'rice';
-    setTimeout(() => { eating = null; }, 1600);
+    setTimeout(() => { eating = null; }, video ? 3500 : 1600);
+  }
+  if (video && r.ok) {
+    if (kind === 'pat') startOneShot('pat', 3000);
+    if (kind === 'play') startOneShot('play', 4000);
   }
 }
 
@@ -217,6 +281,7 @@ function bindPetUi() {
     $('main-menu').classList.add('hidden');
     if (m === 'quit') window.pet.quit();
     if (m === 'log') window.pet.openLog();
+    if (m === 'credits') alert(CREDITS);
     if (m === 'release' && confirm('放生它，并在 LobeHub 里删除对应的 agent（含聊天记录）？')) await release(true);
     if (m === 'forget' && confirm('只重置本地进度，LobeHub 里的 agent 会保留。继续？')) await release(false);
   });
@@ -235,9 +300,10 @@ function bindPetUi() {
   $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
 
   // drag the window by the sprite; a click without movement pats the pet
-  const cv = $('pet-canvas');
   let drag = null;
-  cv.addEventListener('mousedown', (e) => { drag = { x: e.screenX, y: e.screenY, moved: false }; });
+  for (const el of document.querySelectorAll('.pet-hit')) {
+    el.addEventListener('mousedown', (e) => { drag = { x: e.screenX, y: e.screenY, moved: false }; });
+  }
   window.addEventListener('mousemove', (e) => {
     if (!drag) return;
     const dx = e.screenX - drag.x;
@@ -249,6 +315,24 @@ function bindPetUi() {
     if (drag && !drag.moved) doAct('pat');
     drag = null;
   });
+}
+
+// Controls are hidden unless the pointer is over the window (or one is in use).
+function hudInUse() {
+  return document.activeElement === $('chat-input') || !$('food-menu').classList.contains('hidden') || !$('main-menu').classList.contains('hidden');
+}
+function syncHover() {
+  document.body.classList.toggle('hover', pointerInside || hudInUse());
+}
+function bindHover() {
+  const root = document.documentElement;
+  root.addEventListener('mouseenter', () => { pointerInside = true; syncHover(); });
+  root.addEventListener('mouseleave', () => { pointerInside = false; syncHover(); });
+  window.addEventListener('mousemove', () => { if (!pointerInside) { pointerInside = true; syncHover(); } });
+  window.addEventListener('blur', () => { pointerInside = false; syncHover(); });
+  $('chat-input').addEventListener('blur', syncHover);
+  $('chat-input').addEventListener('focus', syncHover);
+  new MutationObserver(syncHover).observe($('hud'), { subtree: true, attributes: true, attributeFilter: ['class'] });
 }
 
 async function release(deleteAgent) {
@@ -263,12 +347,12 @@ function drawPet(ctx, t) {
   const status = thinking ? 'idle' : view.status;
   const f = S.frame({ speciesId: p.speciesId, stage: p.stage, status, t, talking: performance.now() < talkUntil, eating });
   const colorOf = (k) => S.colorFor(p.speciesId, k);
-  const scale = 8;
+  const scale = 5;
   S.drawGrid(ctx, f.grid, colorOf, scale, 0, f.dy * scale);
   for (const fx of f.effects) S.drawGrid(ctx, S.EFFECTS[fx.name], (k) => S.colorFor(p.speciesId, k), scale, fx.x * scale, fx.y * scale);
   if (performance.now() < flashUntil) {
     ctx.fillStyle = `rgba(255,255,255,${(flashUntil - performance.now()) / 700})`;
-    ctx.fillRect(0, 0, 192, 192);
+    ctx.fillRect(0, 0, 120, 120);
   }
 }
 
@@ -299,9 +383,13 @@ function frameLoop(ts) {
       ctx.fillRect(0, 0, 192, 192);
     }
   } else if (view) {
-    const ctx = $('pet-canvas').getContext('2d');
-    ctx.clearRect(0, 0, 192, 192);
-    drawPet(ctx, t);
+    if (isVideo(view.pet.speciesId)) {
+      playClip($('pet-video'), speciesOf(view.pet.speciesId), desiredClip());
+    } else {
+      const ctx = $('pet-canvas').getContext('2d');
+      ctx.clearRect(0, 0, 120, 120);
+      drawPet(ctx, t);
+    }
   }
   setTimeout(() => requestAnimationFrame(frameLoop), 80); // ~12 fps keeps the pixel feel and idles cheaply
 }
@@ -310,9 +398,10 @@ function frameLoop(ts) {
 async function main() {
   info = await window.pet.boot();
   bindPetUi();
+  bindHover();
   $('hatch-btn').addEventListener('click', startHatch);
   $('hatch-retry').addEventListener('click', showOnboarding);
-  window.pet.onUpdate((v) => { view = v; if (v) refreshHud(); });
+  window.pet.onUpdate((v) => { view = v; if (v) { applyArt(); refreshHud(); } });
   window.pet.onSay((m) => say(m.text, m.kind, m.source, m.reason));
   window.pet.onThinking(setThinking);
   window.pet.onEvolved(() => { flashUntil = performance.now() + 700; });

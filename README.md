@@ -2,11 +2,11 @@
 
 A pixel-art desktop pet whose brain is a [LobeHub](https://lobehub.com) agent.
 
-1. First launch: three eggs (fire / water / grass). Pick one.
+1. First launch: four eggs (fire / water / grass / whale). Pick one.
 2. The app calls the LobeHub CLI: `lh login` (device-code login in your browser, skipped if you are already logged in), then `lh agent create` to make **your** pet's agent, with the species personality baked into its system role.
 3. The pet lives on your desktop: it gets hungry, tired and bored, evolves (baby → child → adult), remembers what you tell it, and speaks up on its own.
 
-All art is generated in code (`src/renderer/sprites.js`) — no third-party assets, nothing to license.
+The fire, water and grass pets are pixel art generated in code (`src/renderer/sprites.js`), with no third-party assets. The fourth, **大肥鱼 (Dafeiyu)**, uses animations from a community project; see [Credits](#credits). The pet window is small and shows only the pet; the bars, buttons and chat box appear while the pointer is over it.
 
 ## Download (macOS)
 
@@ -63,3 +63,13 @@ xvfb-run -a node e2e/run.js all       # drives the real Electron app; `live` use
 - The real `lh login` browser flow has not been exercised end to end: tests use a fake `lh` that prints the same lines the real CLI does (read from the CLI source).
 - Transparent / always-on-top / drag behaviour on a real desktop has not been visually verified (tests run under Xvfb with an opaque window).
 - Pet needs only persist locally; "Release" optionally deletes the LobeHub agent too.
+
+## Credits
+
+The **大肥鱼 (Dafeiyu)** animations (`src/renderer/assets/dafeiyu/`) come from the open-source project **dsh-pet** by PC2005-cloud: <https://github.com/PC2005-cloud/dsh-pet>.
+
+- The code of dsh-pet is MIT-licensed. Its assets are free for open-source use but **may not be used commercially**.
+- The character is a community re-creation of DeepSeek's "大肥鱼" (not an official DeepSeek image), licensed **CC BY-NC-SA 4.0**. The prototype "溟月" is by Bilibili @上善无形; the DeepSeek maid-whale design is by Bilibili @ZipZipPipe.
+- Because of those terms, do not sell this app or ship it commercially while it includes these files. Remove `src/renderer/assets/dafeiyu/` and the `dafeiyu` entry in `src/core/species.js` first.
+
+Full text: `src/renderer/assets/dafeiyu/NOTICE.md`.
