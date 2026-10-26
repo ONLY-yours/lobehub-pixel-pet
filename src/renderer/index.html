@@ -13,6 +13,7 @@
     <p class="sub">四颗蛋，只能带走一颗。</p>
     <div id="eggs" class="eggs"></div>
     <div id="egg-info" class="egg-info">点一颗蛋看看。</div>
+    <label class="opt"><input id="local-opt" type="checkbox" checked /><span>让它能使用这台电脑：读写文件、搜索内容、运行命令来帮我办事。<span class="warn">它能碰到你账号权限内的所有文件和命令，不是沙盒；之后可在菜单里随时关闭。</span></span></label>
     <div class="row">
       <input id="pet-name" maxlength="12" placeholder="给它起个名字（可选）" autocomplete="off" />
       <button id="hatch-btn" class="btn primary" disabled>孵化</button>
@@ -28,6 +29,7 @@
       <li data-step="checking-login">检查 LobeHub 登录</li>
       <li data-step="login">在浏览器里登录 LobeHub</li>
       <li data-step="creating-agent">创建你的小精灵（lh agent）</li>
+      <li data-step="connecting-device" id="step-device">连接这台电脑（让它能读写文件）</li>
       <li data-step="hatching">破壳</li>
     </ol>
     <div id="login-box" class="login-box hidden">
@@ -42,6 +44,7 @@
   <!-- 3. the pet -->
   <section id="pet-screen" class="screen hidden">
     <div id="bubble" class="bubble hidden"></div>
+    <div class="bubble-tail"></div>
     <div id="stage" class="stage">
       <canvas id="pet-canvas" class="pet-hit" width="120" height="120"></canvas>
       <div id="vwrap" class="vwrap pet-hit hidden"><video id="pet-video" muted playsinline></video></div>
@@ -61,12 +64,15 @@
         <button class="btn" data-act="chat">聊天</button>
         <button class="btn" data-act="menu">⋯</button>
       </div>
+      <div id="attach-row" class="attach-row hidden"></div>
       <div id="chat-row" class="row chat-row hidden">
-        <input id="chat-input" maxlength="200" placeholder="跟它说点什么…" autocomplete="off" />
+        <button id="attach-btn" class="btn attach-btn" title="添加图片（也可以直接 Ctrl/⌘+V 粘贴，或拖进来）">📎</button>
+        <input id="chat-input" maxlength="400" placeholder="说点什么，可粘贴图片…" autocomplete="off" />
         <button id="chat-send" class="btn primary">发送</button>
       </div>
       <div id="food-menu" class="popup hidden"></div>
       <div id="main-menu" class="popup hidden">
+        <button class="btn" id="menu-local" data-menu="local">本机能力：…</button>
         <button class="btn" data-menu="release">放生并删除 agent</button>
         <button class="btn" data-menu="forget">仅重置本地</button>
         <button class="btn" data-menu="log">打开错误日志</button>

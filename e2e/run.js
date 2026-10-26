@@ -108,10 +108,10 @@ async function fresh() {
       return `greeting: ${text.slice(0, 40)}`;
     }, page);
 
-    await step(S, 'CLI call order was whoami -> login -> agent create -> agent run', async () => {
+    await step(S, 'CLI call order was whoami -> login -> agent create -> connect device -> bind -> agent run', async () => {
       const calls = fs.readFileSync(path.join(fakeDir, 'calls.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).args);
       const seq = calls.map((a) => (a[0] === 'agent' ? `agent ${a[1]}` : a[0]));
-      const want = ['whoami', 'login', 'whoami', 'agent create', 'agent run'];
+      const want = ['whoami', 'login', 'whoami', 'agent create', 'device', 'connect', 'device', 'agent edit', 'agent run']; // 'device' = `device list`
       assert.deepEqual(seq.slice(0, want.length), want);
       const created = JSON.parse(fs.readFileSync(path.join(fakeDir, 'last-create.json'), 'utf8'));
       assert.match(created.systemRole, /泡鲸/);
@@ -239,14 +239,141 @@ async function dafeiyu() {
   }
 }
 
+// ------------------------------------------------------------------ busy
+// Fake lh with a slow agent: the pet is "working" for a few seconds.
+async function busy() {
+  const S = 'busy';
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-busy-'));
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-busyfake-'));
+  fs.writeFileSync(path.join(fakeDir, 'loggedin'), '1');
+  const env = { PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir, FAKE_LH_RUN_DELAY_MS: '3500' };
+  const { app, page } = await launch(env);
+  const calls = () => fs.readFileSync(path.join(fakeDir, 'calls.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).args);
+  const idle = () => page.waitForFunction(() => !document.body.classList.contains('busy'), null, { timeout: 20000 });
+  try {
+    await page.waitForSelector('.egg-card');
+    await page.locator('.egg-card').nth(0).click();
+    await page.click('#hatch-btn');
+    await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 30000 });
+    await idle();
+
+    await step(S, 'the computer-access option was on by default and the agent got bound to this computer', async () => {
+      const edits = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').map(JSON.parse);
+      assert.deepEqual(edits.find((e) => e.agencyConfig).agencyConfig, { boundDeviceId: 'dev_DAEMON', executionTarget: 'local' });
+      assert.ok(fs.existsSync(path.join(fakeDir, 'daemon-started')));
+    });
+
+    await step(S, 'while the pet works the controls stay hidden even under the pointer, and actions are refused', async () => {
+      await clickAct(page, 'chat');
+      await page.fill('#chat-input', '帮我看看下载文件夹里有什么');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await page.mouse.move(120, 160); // pointer is right over the pet
+      await page.waitForTimeout(400);
+      assert.equal(await hudOpacity(page), '0');
+      assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('toolbar')).visibility), 'hidden');
+      assert.match(await page.textContent('#bubble'), /思考中/);
+      const r = await page.evaluate(() => window.pet.act('feed', 'rice'));
+      assert.deepEqual(r, { ok: false, reason: 'busy' });
+    }, () => page);
+
+    await step(S, 'when the reply arrives the controls come back on hover', async () => {
+      await idle();
+      await page.mouse.move(100, 150);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '1', null, { timeout: 5000 });
+      assert.match(await page.textContent('#bubble'), /echo:/);
+    }, () => page);
+
+    await step(S, 'Escape stops a running task and the pet says so', async () => {
+      await page.fill('#chat-input', '一个很大的活');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Escape');
+      await idle();
+      assert.match(await page.textContent('#bubble'), /不想了/);
+    }, () => page);
+
+    await step(S, 'a pasted picture is attached, uploaded, and answered', async () => {
+      const b64 = fs.readFileSync(path.join(ROOT, 'build', 'icon.png')).toString('base64');
+      await hover(page);
+      await page.evaluate((data) => {
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], 'clipboard.png', { type: 'image/png' }));
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      }, b64);
+      await page.waitForSelector('#attach-row .attach-chip', { timeout: 5000 });
+      await page.screenshot({ path: path.join(OUT, 'paste-chip.png') });
+      await page.fill('#chat-input', '这是什么图标？');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await idle();
+      const seq = calls().map((a) => `${a[0]} ${a[1]}`);
+      assert.deepEqual(seq.slice(-4), ['file upload', 'message create', 'message add-files', 'agent run']);
+      assert.equal(await page.locator('#attach-row .attach-chip').count(), 0);
+    }, () => page);
+
+    await step(S, 'turning computer access off from the menu unbinds the agent, and on binds it again', async () => {
+      await clickAct(page, 'menu');
+      assert.match(await page.textContent('#menu-local'), /开/);
+      await page.click('#menu-local');
+      await idle();
+      let edits = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').map(JSON.parse).filter((e) => e.agencyConfig);
+      assert.deepEqual(edits.at(-1).agencyConfig, { boundDeviceId: null });
+      await clickAct(page, 'menu');
+      assert.match(await page.textContent('#menu-local'), /关/);
+      await page.click('#menu-local');
+      await idle();
+      edits = fs.readFileSync(path.join(fakeDir, 'edits.log'), 'utf8').trim().split('\n').map(JSON.parse).filter((e) => e.agencyConfig);
+      assert.equal(edits.at(-1).agencyConfig.boundDeviceId, 'dev_DAEMON');
+    }, () => page);
+  } finally {
+    await app.close().catch(() => {});
+  }
+}
+
+// A reply much longer than the bubble must scroll inside it instead of spilling over the pet.
+async function longreply() {
+  const S = 'longreply';
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-long-'));
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-longfake-'));
+  fs.writeFileSync(path.join(fakeDir, 'loggedin'), '1');
+  const { app, page } = await launch({ PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir, FAKE_LH_LONG_REPLY: '1' });
+  try {
+    await page.waitForSelector('.egg-card');
+    await page.locator('.egg-card').nth(1).click();
+    await page.click('#hatch-btn');
+    await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 30000 });
+    await step(S, 'a very long reply scrolls inside the bubble and stays within the window', async () => {
+      await page.waitForFunction(() => { const b = document.getElementById('bubble'); return !b.classList.contains('hidden') && b.textContent.includes('第14行'); }, null, { timeout: 15000 });
+      const m = await page.evaluate(() => {
+        const b = document.getElementById('bubble');
+        const r = b.getBoundingClientRect();
+        return { scrollable: b.scrollHeight > b.clientHeight + 4, height: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom), overflowY: getComputedStyle(b).overflowY, winH: window.innerHeight, newlines: getComputedStyle(b).whiteSpace };
+      });
+      assert.equal(m.scrollable, true);
+      assert.equal(m.overflowY, 'auto');
+      assert.equal(m.newlines, 'pre-wrap');
+      assert.ok(m.height <= 84, `bubble is ${m.height}px tall`);
+      assert.ok(m.top >= 0 && m.bottom <= m.winH, `bubble ${m.top}-${m.bottom} outside the ${m.winH}px window`);
+      await page.evaluate(() => { document.getElementById('bubble').scrollTop = 9999; });
+      return `bubble ${m.height}px, scrollable`;
+    }, () => page);
+  } finally {
+    await app.close().catch(() => {});
+  }
+}
+
 // ----------------------------------------------------------------- live
 async function live() {
   const S = 'live';
   const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-live-'));
-  const env = { PIXELPET_DATA_DIR: data, LH_BIN: 'lh' };
+  const env = { PIXELPET_DATA_DIR: data, LH_BIN: 'lh', PIXELPET_NO_CONNECT: '1' };
   const { app, page } = await launch(env);
   let agentId = null;
   const transcript = [];
+  const idle = () => page.waitForFunction(() => !document.body.classList.contains('busy'), null, { timeout: 150000 });
   // A killed run (timeout, Ctrl-C) must not leak the real agent it created.
   const onSignal = () => { if (agentId) { try { lh('agent', 'delete', agentId, '--yes'); } catch { /* best effort */ } } process.exit(143); };
   process.on('SIGTERM', onSignal);
@@ -256,6 +383,7 @@ async function live() {
     await page.waitForSelector('.egg-card');
     await step(S, 'real lh is logged in, so login is skipped and a real agent is created', async () => {
       await page.locator('.egg-card').nth(2).click();
+      await page.uncheck('#local-opt'); // tests must never bind an agent to, or run tools on, a real computer
       await page.fill('#pet-name', '芽芽');
       await page.click('#hatch-btn');
       await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 120000 });
@@ -321,6 +449,42 @@ async function live() {
       return `unprompted: ${text.slice(0, 60)}`;
     }, page);
 
+    await step(S, 'asked to look something up, the pet helps instead of deflecting to other assistants', async () => {
+      await hover(page);
+      await page.fill('#chat-input', '帮我查一下今天纳斯达克指数大概是多少，最近是涨还是跌？');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await idle();
+      const b = (await bubbleText(page)).trim();
+      await record('lookup question (nasdaq)');
+      transcript.splice(transcript.length - 1, 0, '[lookup sent] 帮我查一下今天纳斯达克指数大概是多少，最近是涨还是跌？');
+      assert.ok(b.length > 4, 'empty reply');
+      assert.doesNotMatch(b, /去问|找.{0,8}(专家|助手)|只会看|看不懂/, `deflected: ${b}`);
+      return `${b.length} chars: ${b.slice(0, 50)}`;
+    }, page);
+
+    await step(S, 'a pasted picture is recognised by the real model', async () => {
+      const b64 = fs.readFileSync(path.join(ROOT, 'build', 'icon.png')).toString('base64');
+      await hover(page);
+      await page.evaluate((data) => {
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], 'clipboard.png', { type: 'image/png' }));
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      }, b64);
+      await page.waitForSelector('#attach-row .attach-chip', { timeout: 5000 });
+      await page.fill('#chat-input', '这张图里有几个蛋？分别什么颜色？');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await idle();
+      const b = (await bubbleText(page)).trim();
+      await record('picture question (three eggs)');
+      transcript.splice(transcript.length - 1, 0, '[picture sent] build/icon.png: 三颗像素蛋（米黄带橙点、浅蓝带蓝点、浅绿带绿点）+ 这张图里有几个蛋？分别什么颜色？');
+      assert.match(b, /蛋/, `reply: ${b}`);
+      assert.match(b, /三|3/, `reply: ${b}`);
+      return b.slice(0, 60);
+    }, page);
+
     await step(S, 'enough xp evolves the pet (baby -> child) and the sprite changes', async () => {
       const before = await page.locator('#pet-canvas').screenshot();
       fs.writeFileSync(path.join(OUT, 'evolve-before-live.png'), before);
@@ -335,6 +499,7 @@ async function live() {
     }, page);
 
     await step(S, 'release deletes the real agent and returns to egg selection', async () => {
+      await idle(); // evolving makes the pet speak; controls stay hidden until it is done
       await clickAct(page, 'menu');
       await page.click('[data-menu="release"]');
       await page.waitForSelector('#onboarding:not(.hidden)', { timeout: 30000 });
@@ -389,6 +554,7 @@ async function art() {
 (async () => {
   if (which === 'fresh' || which === 'all') await fresh();
   if (which === 'dafeiyu' || which === 'all') await dafeiyu();
+  if (which === 'busy' || which === 'all') { await busy(); await longreply(); }
   if (which === 'live' || which === 'all') await live();
   if (which === 'art' || which === 'all') await art();
   // Scenarios can be run separately; keep earlier results for the ones not run this time.

@@ -1,7 +1,8 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { LhClient } = require('../core/lh-client');
 const { Store } = require('../core/store');
@@ -11,7 +12,7 @@ const { FOODS } = require('../core/pet-state');
 
 const TEST_MODE = process.env.PIXELPET_TEST === '1';
 const HEARTBEAT_MS = TEST_MODE ? 2000 : 30 * 1000;
-const SIZES = { onboarding: { w: 680, h: 480 }, pet: { w: 230, h: 292 } };
+const SIZES = { onboarding: { w: 680, h: 480 }, pet: { w: 230, h: 300 } };
 
 if (process.env.PIXELPET_DATA_DIR) app.setPath('userData', process.env.PIXELPET_DATA_DIR);
 if (TEST_MODE) app.commandLine.appendSwitch('no-sandbox');
@@ -34,6 +35,28 @@ function logError(e) {
   const line = `${new Date().toISOString()} [${e.code || 'error'}] ${e.message}${e.stderr ? ` | stderr: ${String(e.stderr).trim().slice(0, 500)}` : ''}\n`;
   console.error('[pixel-pet]', line.trim());
   try { fs.appendFileSync(logFile(), line); } catch { /* logging must never break the pet */ }
+}
+
+const IMG_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+// Pictures arrive from the renderer as data URLs; write them to a private temp dir for `lh file upload`.
+function saveImages(images) {
+  const list = Array.isArray(images) ? images.slice(0, MAX_IMAGES) : [];
+  if (!list.length) return { paths: [], cleanup: () => {} };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pixelpet-img-'));
+  const paths = [];
+  list.forEach((img, i) => {
+    const m = /^data:(image\/(?:png|jpeg|gif|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String((img && img.dataUrl) || ''));
+    if (!m) return;
+    const buf = Buffer.from(m[2], 'base64');
+    if (buf.length > MAX_IMAGE_BYTES) return;
+    const file = path.join(dir, `image-${i + 1}.${IMG_EXT[m[1]]}`);
+    fs.writeFileSync(file, buf);
+    paths.push(file);
+  });
+  return { paths, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
 
 function send(channel, payload) {
@@ -65,14 +88,16 @@ function wire() {
   ipcMain.handle('boot', () => {
     const v = service.init();
     place(v ? 'pet' : 'onboarding');
+    if (v) setTimeout(() => service.warmup().catch((e) => logError(e)), 1500);
     return { view: v, species: SPECIES_IDS.map((id) => ({ ...SPECIES[id], fallback: undefined })), foods: FOODS, testMode: TEST_MODE };
   });
   ipcMain.handle('whoami', () => service.lh.whoami());
-  ipcMain.handle('hatch', async (_e, { speciesId, name }) => {
+  ipcMain.handle('hatch', async (_e, { speciesId, name, localAbilities }) => {
     try {
-      const view = await service.hatch({
+      const { view, localError } = await service.hatch({
         speciesId,
         name,
+        localAbilities: !!localAbilities,
         onStep: (s) => send('hatch-step', s),
         onLoginPrompt: (p) => {
           send('login-prompt', p);
@@ -81,13 +106,32 @@ function wire() {
         },
       });
       // the window shrinks to pet size when the renderer enters the pet screen (see 'place')
-      return { ok: true, view };
+      return { ok: true, view, localError };
     } catch (e) {
       return { ok: false, error: e.message };
     }
   });
   ipcMain.handle('act', (_e, { kind, food }) => service.act(kind, food));
-  ipcMain.handle('chat', (_e, { text }) => service.chat(text));
+  ipcMain.handle('chat', async (_e, { text, images }) => {
+    const { paths, cleanup } = saveImages(images);
+    try {
+      return await service.chat(text, paths);
+    } finally {
+      cleanup();
+    }
+  });
+  ipcMain.handle('pick-images', async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'], filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }] });
+    if (r.canceled) return [];
+    const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+    return r.filePaths.slice(0, MAX_IMAGES).flatMap((f) => {
+      const buf = fs.readFileSync(f);
+      if (buf.length > MAX_IMAGE_BYTES) return [];
+      return [{ name: path.basename(f), dataUrl: `data:${mime[path.extname(f).slice(1).toLowerCase()]};base64,${buf.toString('base64')}` }];
+    });
+  });
+  ipcMain.handle('set-local', (_e, { on }) => service.setLocalAbilities(!!on));
+  ipcMain.on('cancel', () => service.cancel());
   ipcMain.handle('release', async (_e, opts) => {
     const r = await service.release(opts);
     place('onboarding');

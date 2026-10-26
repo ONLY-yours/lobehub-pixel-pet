@@ -23,6 +23,31 @@ if (args[0] === 'whoami') {
   const id = 'agt_FAKE' + Date.now();
   fs.writeFileSync(path.join(dir, 'last-create.json'), JSON.stringify({ title: args[args.indexOf('-t') + 1], systemRole: args[args.indexOf('-s') + 1] }));
   console.log(`✓ Created agent ${id}`);
+} else if (args[0] === 'device' && args[1] === 'list') {
+  const f = path.join(dir, 'devices.json');
+  console.log(fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '[]');
+} else if (args[0] === 'connect') {
+  if (process.env.FAKE_LH_CONNECT_FAIL) { console.error('connect failed'); process.exit(1); }
+  // "daemon start": the machine shows up as an online device
+  fs.writeFileSync(path.join(dir, 'devices.json'), JSON.stringify([{ deviceId: 'dev_DAEMON', hostname: 'fake', platform: process.platform, online: true, channels: [{ channel: 'cli', connectedAt: new Date().toISOString() }] }]));
+  fs.writeFileSync(path.join(dir, 'daemon-started'), '1');
+  console.log('daemon started');
+} else if (args[0] === 'agent' && args[1] === 'edit') {
+  const rec = { agentId: args[2], systemRole: args.includes('-s') ? args[args.indexOf('-s') + 1] : null };
+  const i = args.indexOf('--agency-config-file');
+  if (i >= 0) rec.agencyConfig = JSON.parse(fs.readFileSync(args[i + 1], 'utf8'));
+  fs.appendFileSync(path.join(dir, 'edits.log'), JSON.stringify(rec) + '\n');
+  console.log('updated');
+} else if (args[0] === 'agent' && args[1] === 'view') {
+  console.log(JSON.stringify({ id: args[2], systemRole: 'x', agencyConfig: {} }));
+} else if (args[0] === 'file' && args[1] === 'upload') {
+  console.log(JSON.stringify({ id: 'file_FAKE1' }));
+} else if (args[0] === 'topic' && args[1] === 'create') {
+  console.log('✓ Created topic tpc_FAKETOPIC');
+} else if (args[0] === 'message' && args[1] === 'create') {
+  console.log(JSON.stringify({ id: 'msg_FAKE1' }));
+} else if (args[0] === 'message' && args[1] === 'add-files') {
+  console.log('✓ Added 1 file(s)');
 } else if (args[0] === 'agent' && args[1] === 'delete') {
   console.log('✓ Deleted agent');
 } else if (args[0] === 'agent' && args[1] === 'run') {
@@ -33,8 +58,13 @@ if (args[0] === 'whoami') {
   if (process.env.FAKE_LH_FAIL_RUN) { console.error('boom'); process.exit(1); }
   const prompt = args[args.indexOf('-p') + 1];
   const topic = args.includes('-t') ? args[args.indexOf('-t') + 1] : 'tpc_FAKE1';
-  console.log(JSON.stringify([
+  const tools = args.map((a, i) => (a === '--tool' ? args[i + 1] : null)).filter(Boolean);
+  fs.appendFileSync(path.join(dir, 'runs.log'), JSON.stringify({ prompt, tools }) + '\n');
+  const out = JSON.stringify([
     { type: 'agent_runtime_init', data: { topicId: topic } },
-    { type: 'stream_end', data: { finalContent: `echo: ${prompt.split('\n').pop()}`, usage: { cost: 0.001 } } },
-  ]));
+    { type: 'stream_end', data: { finalContent: process.env.FAKE_LH_LONG_REPLY ? Array.from({ length: 14 }, (_, i) => `第${i + 1}行：这是一条很长很长的回复，用来检查气泡会不会滚动。`).join('\n') : `echo: ${prompt.split('\n').pop()}`, usage: { cost: 0.001 } } },
+  ]);
+  const delay = Number(process.env.FAKE_LH_RUN_DELAY_MS || 0);
+  if (delay) setTimeout(() => console.log(out), delay);
+  else console.log(out);
 } else { console.error('unknown'); process.exit(2); }

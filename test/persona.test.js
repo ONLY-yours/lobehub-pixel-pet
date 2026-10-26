@@ -30,3 +30,12 @@ test('event prompts start with the state block and an [事件] marker', () => {
   assert.match(prompt, /^\[状态\]/);
   assert.match(prompt, /\n\[事件\] /);
 });
+
+test('the persona keeps replies short and heavy work one step at a time, without refusing helpful tasks', () => {
+  const r = buildSystemRole({ speciesId: 'embit', name: 'E' });
+  assert.match(r, /50 个字以内/);
+  assert.match(r, /一件一件来/);
+  assert.match(r, /联网搜索/);
+  assert.doesNotMatch(r, /你是宠物，不是助手/);
+  assert.doesNotMatch(r, /提醒主人去找其他助手/);
+});

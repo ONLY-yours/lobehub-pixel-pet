@@ -21,6 +21,9 @@ let flashUntil = 0;
 let hatchCracks = 0;
 let revealSpecies = null;
 let bubbleTimer = null;
+let bubbleHold = false; // pointer over the bubble: keep it open so a long reply can be scrolled and read
+let thinkTimer = null;
+let attachments = []; // [{ dataUrl, name }] waiting to be sent with the next chat message
 let oneShot = null; // { key, until } temporary video clip (pat, play, evolve, hatch)
 let pointerInside = false;
 let nextLook = 0;
@@ -104,7 +107,7 @@ function showOnboarding() {
 }
 
 // ---------- hatching ----------
-const STEP_ORDER = ['checking-login', 'login', 'creating-agent', 'hatching'];
+const STEP_ORDER = ['checking-login', 'login', 'creating-agent', 'connecting-device', 'hatching'];
 
 function setStep(step) {
   const idx = STEP_ORDER.indexOf(step);
@@ -113,7 +116,7 @@ function setStep(step) {
     li.classList.toggle('done', i < idx);
     li.classList.toggle('active', i === idx);
   });
-  hatchCracks = Math.min(3, Math.max(0, idx));
+  hatchCracks = Math.min(3, Math.max(0, idx > 3 ? 3 : idx));
 }
 
 async function startHatch() {
@@ -123,6 +126,7 @@ async function startHatch() {
   $('hatch-error').classList.add('hidden');
   $('hatch-retry').classList.add('hidden');
   $('login-box').classList.add('hidden');
+  $('step-device').classList.toggle('hidden', !$('local-opt').checked);
   $('hatch-title').textContent = '孵化中……';
   document.querySelectorAll('#steps li').forEach((li) => li.classList.remove('done', 'active'));
   show('hatching');
@@ -134,7 +138,7 @@ async function startHatch() {
     $('login-url').textContent = url;
     $('login-box').classList.remove('hidden');
   });
-  const res = await window.pet.hatch(species.id, $('pet-name').value);
+  const res = await window.pet.hatch(species.id, $('pet-name').value, $('local-opt').checked);
   offStep();
   offLogin();
 
@@ -157,7 +161,10 @@ async function startHatch() {
     $('hatch-video').dataset.key = '';
     playClip($('hatch-video'), sp, 'hatch', false);
   }
-  setTimeout(() => enterPet(res.view), sp.art === 'video' ? 2800 : 1500);
+  setTimeout(() => {
+    enterPet(res.view);
+    if (res.localError) setTimeout(() => say(`（没能连上这台电脑，文件功能先关着：${String(res.localError).slice(0, 60)}）`, 'error', 'fallback', res.localError), 600);
+  }, sp.art === 'video' ? 2800 : 1500);
 }
 
 // ---------- pet ----------
@@ -200,6 +207,8 @@ function refreshHud() {
   const stage = { baby: '幼崽', child: '少年', adult: '成年' }[p.stage];
   const prog = view.progress.next ? ` · 成长 ${view.progress.pct}%` : ' · 已完全成长';
   $('meta').textContent = `${p.name} · ${view.species.nameZh} · ${stage}${prog}`;
+  const loc = view.local && view.local.enabled;
+  $('menu-local').textContent = `本机能力：${loc ? '开（点此关闭）' : '关（点此开启）'}`;
 }
 
 function say(text, kind, source, reason) {
@@ -208,22 +217,36 @@ function say(text, kind, source, reason) {
   b.classList.remove('thinking');
   b.classList.remove('hidden');
   b.textContent = text;
+  b.scrollTop = 0;
   b.dataset.kind = kind || '';
   b.dataset.source = source || '';
   b.dataset.reason = reason || '';
   talkUntil = performance.now() + Math.min(4000, 400 + text.length * 90);
-  bubbleTimer = setTimeout(() => b.classList.add('hidden'), 6000 + text.length * 120);
+  const hideLater = (ms) => {
+    bubbleTimer = setTimeout(() => (bubbleHold ? hideLater(3000) : b.classList.add('hidden')), ms);
+  };
+  hideLater(Math.min(45000, 6000 + text.length * 150));
 }
 
 function setThinking(on) {
   thinking = on;
+  document.body.classList.toggle('busy', on);
+  clearInterval(thinkTimer);
   const b = $('bubble');
   if (on) {
+    // nothing but the pet and this bubble while it works; controls come back when it is done
+    document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    $('food-menu').classList.add('hidden');
+    $('main-menu').classList.add('hidden');
     clearTimeout(bubbleTimer);
     b.classList.remove('hidden');
     b.classList.add('thinking');
-    b.textContent = '……';
+    let n = 0;
+    const tick = () => { b.textContent = `思考中${'.'.repeat((n++ % 3) + 1)}`; };
+    tick();
+    thinkTimer = setInterval(tick, 450);
   }
+  syncHover();
 }
 
 // Tell the owner what actually went wrong instead of blaming "the network" for everything.
@@ -237,6 +260,7 @@ function errorLine(r) {
 }
 
 async function doAct(kind, food) {
+  if (thinking) return;
   const r = await window.pet.act(kind, food);
   const video = isVideo(view && view.pet.speciesId);
   if (kind === 'feed' && r.ok) {
@@ -281,6 +305,13 @@ function bindPetUi() {
     $('main-menu').classList.add('hidden');
     if (m === 'quit') window.pet.quit();
     if (m === 'log') window.pet.openLog();
+    if (m === 'local') {
+      const on = !(view && view.local && view.local.enabled);
+      if (on && !confirm('让宠物使用这台电脑？\n它可以读写文件、搜索内容、运行命令，能碰到你账号权限内的所有东西（不是沙盒）。')) return;
+      const r = await window.pet.setLocal(on);
+      if (r.ok) say(on ? '（已连上这台电脑，要我帮你找什么？）' : '（好，我不碰你的电脑了。）', 'local', 'fallback');
+      else if (r.reason !== 'busy') say(`（没成功：${String(r.message || '未知原因').slice(0, 60)}）`, 'error', 'fallback', r.message);
+    }
     if (m === 'credits') alert(CREDITS);
     if (m === 'release' && confirm('放生它，并在 LobeHub 里删除对应的 agent（含聊天记录）？')) await release(true);
     if (m === 'forget' && confirm('只重置本地进度，LobeHub 里的 agent 会保留。继续？')) await release(false);
@@ -288,16 +319,47 @@ function bindPetUi() {
   const send = async () => {
     const input = $('chat-input');
     const text = input.value.trim();
-    if (!text) return;
+    if ((!text && attachments.length === 0) || thinking) return;
+    const imgs = attachments;
+    attachments = [];
+    renderAttachments();
     input.value = '';
     $('chat-send').disabled = true;
-    const r = await window.pet.chat(text);
+    const r = await window.pet.chat(text, imgs);
     $('chat-send').disabled = false;
     if (!r.ok && r.reason === 'error') say(errorLine(r), 'error', 'error', r.message);
+    if (!r.ok && r.reason === 'canceled') say('（好吧，不想了。）', 'canceled', 'fallback');
     if (!r.ok && r.reason === 'busy') say('等等，我还在想上一句……', 'busy');
   };
   $('chat-send').addEventListener('click', send);
   $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+  // ---- pictures: paste (Ctrl/⌘+V), drag in, or the 📎 button; Escape stops a running task
+  document.addEventListener('paste', (e) => {
+    const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length || $('pet-screen').classList.contains('hidden')) return;
+    e.preventDefault();
+    if (thinking) return;
+    openChat();
+    files.forEach(addImageFile);
+  });
+  document.addEventListener('dragover', (e) => { if ([...(e.dataTransfer ? e.dataTransfer.types : [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dragging-file'); } });
+  document.addEventListener('dragleave', () => document.body.classList.remove('dragging-file'));
+  document.addEventListener('drop', (e) => {
+    document.body.classList.remove('dragging-file');
+    const files = [...((e.dataTransfer && e.dataTransfer.files) || [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length || thinking) return;
+    e.preventDefault();
+    openChat();
+    files.forEach(addImageFile);
+  });
+  $('attach-btn').addEventListener('click', async () => {
+    const picked = await window.pet.pickImages();
+    for (const img of picked) pushAttachment(img);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && thinking) window.pet.cancel(); });
+  $('bubble').addEventListener('mouseenter', () => { bubbleHold = true; });
+  $('bubble').addEventListener('mouseleave', () => { bubbleHold = false; });
 
   // drag the window by the sprite; a click without movement pats the pet
   let drag = null;
@@ -319,10 +381,10 @@ function bindPetUi() {
 
 // Controls are hidden unless the pointer is over the window (or one is in use).
 function hudInUse() {
-  return document.activeElement === $('chat-input') || !$('food-menu').classList.contains('hidden') || !$('main-menu').classList.contains('hidden');
+  return document.activeElement === $('chat-input') || !$('chat-row').classList.contains('hidden') || !$('food-menu').classList.contains('hidden') || !$('main-menu').classList.contains('hidden');
 }
 function syncHover() {
-  document.body.classList.toggle('hover', pointerInside || hudInUse());
+  document.body.classList.toggle('hover', !thinking && (pointerInside || hudInUse()));
 }
 function bindHover() {
   const root = document.documentElement;
@@ -333,6 +395,46 @@ function bindHover() {
   $('chat-input').addEventListener('blur', syncHover);
   $('chat-input').addEventListener('focus', syncHover);
   new MutationObserver(syncHover).observe($('hud'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+}
+
+// ---------- pictures to send ----------
+const MAX_IMAGES = 4;
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function openChat() {
+  $('chat-row').classList.remove('hidden');
+  syncHover();
+  $('chat-input').focus();
+}
+
+function pushAttachment(img) {
+  if (attachments.length >= MAX_IMAGES) { say(`（一次最多 ${MAX_IMAGES} 张图。）`, 'limit', 'fallback'); return; }
+  attachments.push(img);
+  renderAttachments();
+}
+
+function addImageFile(file) {
+  if (file.size > MAX_IMAGE_BYTES) { say('（这张图太大了，换一张小于 8MB 的吧。）', 'limit', 'fallback'); return; }
+  const reader = new FileReader();
+  reader.onload = () => pushAttachment({ dataUrl: reader.result, name: file.name || 'pasted.png' });
+  reader.readAsDataURL(file);
+}
+
+function renderAttachments() {
+  const row = $('attach-row');
+  row.innerHTML = '';
+  attachments.forEach((img, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    chip.style.backgroundImage = `url(${img.dataUrl})`;
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.title = '移除';
+    x.addEventListener('click', () => { attachments.splice(i, 1); renderAttachments(); });
+    chip.appendChild(x);
+    row.appendChild(chip);
+  });
+  row.classList.toggle('hidden', attachments.length === 0);
 }
 
 async function release(deleteAgent) {

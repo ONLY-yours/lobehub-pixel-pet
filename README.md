@@ -8,6 +8,15 @@ A pixel-art desktop pet whose brain is a [LobeHub](https://lobehub.com) agent.
 
 The fire, water and grass pets are pixel art generated in code (`src/renderer/sprites.js`), with no third-party assets. The fourth, **大肥鱼 (Dafeiyu)**, uses animations from a community project; see [Credits](#credits). The pet window is small and shows only the pet; the bars, buttons and chat box appear while the pointer is over it.
 
+## What the pet can do (v0.2)
+
+- **Works first, charms second.** The persona is flexible: simple jobs (look something up, search the web, calculate, translate, write) are just done, in the pet's voice. Replies aim for 50 characters or fewer, and big tasks are done one step at a time. Longer replies scroll inside the bubble.
+- **Busy means busy.** While the pet is thinking or working, only the pet and a "思考中" bubble show; the bars, buttons and chat box stay hidden even on hover, and care actions are refused. Press **Esc** to stop a running task.
+- **Pictures.** Paste with Ctrl/⌘+V, drag an image onto the window, or use the 📎 button (up to 4 images, 8 MB each). The picture is uploaded with `lh file upload`, attached to a user message in the pet's topic, and the next agent run sees it.
+- **Use this computer.** The hatch screen has an option (on by default) to let the pet use your computer. It works through LobeHub's device mechanism: the app finds this machine's online device (the LobeHub desktop app or `lh connect`), starts `lh connect --daemon` only if none is online, and binds the pet's agent to it (`agencyConfig.boundDeviceId`, `executionTarget: local`). Toggle it any time from the ⋯ menu.
+
+> **Security.** A bound device lets the agent read and write files and run commands as your user. `lh` does not sandbox this: a working directory is only the default for relative paths. Anything the pet reads (web pages, files, images) could contain instructions meant to trick the model. The device is also account-wide while connected. Turn the option off if you do not want this. For automated tests, `PIXELPET_NO_CONNECT=1` forbids starting `lh connect`.
+
 ## Download (macOS)
 
 Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a macOS runner: a **universal** build, so one file runs on both Apple Silicon and Intel.
