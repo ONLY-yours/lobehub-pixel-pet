@@ -67,6 +67,15 @@ test('parseRunEvents tolerates garbage and picks the final content', () => {
   assert.equal(out.text, 'hi');
 });
 
+test('parseRunEvents finds the topic on stream_start when init carries none', () => {
+  const out = parseRunEvents(JSON.stringify([
+    { type: 'agent_runtime_init', data: {} },
+    { type: 'stream_start', data: { assistantMessage: { topicId: 'tpc_1' } } },
+    { type: 'stream_end', data: { finalContent: 'yo' } },
+  ]));
+  assert.equal(out.topicId, 'tpc_1');
+});
+
 test('login handles a code that arrives in a later chunk and non-hyphenated codes', async () => {
   const { lh } = setup();
   lh.env.FAKE_LH_CODE = 'XYZ789';

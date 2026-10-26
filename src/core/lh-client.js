@@ -145,9 +145,9 @@ class LhClient {
   // One conversational turn. Reusing `topicId` keeps the pet's long-term
   // history inside LobeHub. Returns { text, topicId, cost }.
   async run({ agentId, prompt, topicId, timeoutMs = 90000 }) {
-    const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json', '--timeout', String(Math.ceil(timeoutMs / 1000))];
+    const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json'];
     if (topicId) args.push('-t', topicId);
-    const r = await this._run(args, { timeoutMs: timeoutMs + 5000 });
+    const r = await this._run(args, { timeoutMs });
     const parsed = parseRunEvents(r.stdout);
     if (r.code !== 0 && !parsed.text) {
       throw new LhError(`Agent run failed (exit ${r.code}): ${(r.stderr || r.stdout).trim().slice(0, 300)}`, { code: r.code, stderr: r.stderr });
@@ -176,6 +176,8 @@ function parseRunEvents(stdout) {
   let cost = null;
   for (const e of events) {
     if (e.type === 'agent_runtime_init' && e.data && e.data.topicId) topicId = e.data.topicId;
+    // Newer CLI versions no longer put the topic on the init event; it rides on the assistant message.
+    if (!topicId && e.type === 'stream_start' && e.data && e.data.assistantMessage && e.data.assistantMessage.topicId) topicId = e.data.assistantMessage.topicId;
     if (e.type === 'stream_end' && e.data) {
       if (typeof e.data.finalContent === 'string' && e.data.finalContent.trim()) text = e.data.finalContent.trim();
       if (e.data.usage && typeof e.data.usage.cost === 'number') cost = (cost || 0) + e.data.usage.cost;
