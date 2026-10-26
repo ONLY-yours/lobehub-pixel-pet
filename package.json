@@ -8,10 +8,54 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test \"test/*.test.js\"",
-    "e2e": "node e2e/run.js"
+    "e2e": "node e2e/run.js",
+    "icon": "node scripts/make-icon.js",
+    "dist:mac": "electron-builder --mac --universal --publish never"
   },
   "devDependencies": {
     "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "playwright": "^1.64.0"
+  },
+  "author": {
+    "name": "LiJian",
+    "email": "onlyyoulove3@gmail.com"
+  },
+  "homepage": "https://github.com/ONLY-yours/pixel-pet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ONLY-yours/pixel-pet.git"
+  },
+  "build": {
+    "appId": "com.onlyyours.pixelpet",
+    "productName": "Pixel Pet",
+    "copyright": "Copyright © LiJian",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.entertainment",
+      "target": [
+        {
+          "target": "dmg"
+        },
+        {
+          "target": "zip"
+        }
+      ],
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "PixelPet-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Pixel Pet ${version}"
+    }
   }
 }

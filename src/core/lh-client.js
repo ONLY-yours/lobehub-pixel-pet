@@ -4,6 +4,7 @@
 // LobeHub API directly; swapping the harness means swapping this file.
 
 const { spawn } = require('node:child_process');
+const { findLh, withToolPath } = require('./lh-path');
 
 // Variables that make `lh` attach its output to someone else's run. They are
 // only ever set when we are launched from inside an agent run (dev/CI).
@@ -55,7 +56,7 @@ function runLh(bin, args, { timeoutMs = 120000, env, onStdout, onStderr } = {}) 
     });
     child.on('error', (e) => {
       clearTimeout(timer);
-      reject(new LhError(e.code === 'ENOENT' ? `\`${bin}\` not found. Install the LobeHub CLI first.` : e.message, { code: e.code }));
+      reject(new LhError(e.code === 'ENOENT' ? `\`${bin}\` not found. Install the LobeHub CLI first: npm install -g @lobehub/cli` : e.message, { code: e.code }));
     });
     child.on('close', (code) => {
       clearTimeout(timer);
@@ -66,13 +67,13 @@ function runLh(bin, args, { timeoutMs = 120000, env, onStdout, onStderr } = {}) 
 }
 
 class LhClient {
-  constructor({ bin = process.env.LH_BIN || 'lh', env } = {}) {
-    this.bin = bin;
+  constructor({ bin, env } = {}) {
+    this.bin = bin || findLh() || 'lh';
     this.env = env;
   }
 
   _run(args, opts = {}) {
-    return runLh(this.bin, args, { env: this.env || cleanEnv(), ...opts });
+    return runLh(this.bin, args, { env: this.env || withToolPath(cleanEnv(), this.bin), ...opts });
   }
 
   // Returns the logged-in user, or null when not authenticated.

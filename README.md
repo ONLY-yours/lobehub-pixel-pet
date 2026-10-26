@@ -8,7 +8,21 @@ A pixel-art desktop pet whose brain is a [LobeHub](https://lobehub.com) agent.
 
 All art is generated in code (`src/renderer/sprites.js`) — no third-party assets, nothing to license.
 
-## Run
+## Download (macOS)
+
+Releases are built by GitHub Actions (`.github/workflows/release.yml`) on a macOS runner: a **universal** build, so one file runs on both Apple Silicon and Intel.
+
+1. Open the repository's **Releases** page and download `PixelPet-<version>-mac-universal.dmg` (or the `.zip`). The repository is private, so you must be signed in to GitHub.
+2. Drag **Pixel Pet** into Applications.
+3. The app is **not signed or notarized** (no Apple developer certificate), so macOS will refuse the first launch. Either right-click the app and choose **Open**, or run:
+   ```bash
+   xattr -cr "/Applications/Pixel Pet.app"
+   ```
+4. Install the LobeHub CLI once, because the pet's brain runs through it: `npm install -g @lobehub/cli`. The app finds `lh` itself even when launched from Finder (Homebrew, nvm, fnm, volta and similar locations are searched).
+
+To cut a release: `git tag v0.1.1 && git push origin v0.1.1`. To build without releasing, run the workflow manually from the Actions tab; the files are kept as a run artifact. Locally on a Mac: `npm run dist:mac`.
+
+## Run from source
 
 Requires Node 20+, the [LobeHub CLI](https://www.npmjs.com/package/@lobehub/cli) (`lh`) on `PATH`, and a desktop session.
 
@@ -45,7 +59,7 @@ xvfb-run -a node e2e/run.js all       # drives the real Electron app; `live` use
 
 ## Known gaps
 
-- No packaged installer yet (run from source with `npm start`).
+- The macOS build is unsigned and has only been built by CI, not opened on a real Mac by the author. Linux and Windows builds are not set up.
 - The real `lh login` browser flow has not been exercised end to end: tests use a fake `lh` that prints the same lines the real CLI does (read from the CLI source).
 - Transparent / always-on-top / drag behaviour on a real desktop has not been visually verified (tests run under Xvfb with an opaque window).
 - Pet needs only persist locally; "Release" optionally deletes the LobeHub agent too.
