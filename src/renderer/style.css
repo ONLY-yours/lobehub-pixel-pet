@@ -71,7 +71,7 @@ body.hover .hud { opacity: 1; pointer-events: auto; }
 .popup .btn { text-align: left; font-size: 11px; padding: 1px 6px; border-width: 2px; }
 
 /* While the pet is working nothing else can be done: hide every control, even on hover. */
-body.busy .hud, body.busy .popup, body.busy .chat-row { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; }
+body.busy .hud, body.busy .popup, body.busy .chat-row { opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; transition: none !important; }
 body.busy .pet-hit { cursor: progress; }
 
 /* attach / paste images */
@@ -86,3 +86,9 @@ body.dragging-file #pet-screen { outline: 3px dashed #c9502a; outline-offset: -4
 
 .attach-chip.file { width: auto; max-width: 96px; height: 24px; padding: 0 14px 0 4px; display: flex; align-items: center; gap: 3px; font-size: 10px; white-space: nowrap; background: #fff; }
 .attach-chip.file .nm { overflow: hidden; text-overflow: ellipsis; }
+
+/* Stop: the only control that exists while the pet is working, and only under the pointer. */
+.stop-btn { display: none; position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); z-index: 8; font: inherit; font-size: 12px; font-weight: bold; color: #fff; background: #e0455f; border: 3px solid #2b2233; padding: 3px 14px; box-shadow: 2px 2px 0 #2b2233; cursor: pointer; }
+.stop-btn:hover { background: #c9304a; }
+.stop-btn:active { transform: translate(calc(-50% + 2px), 2px); box-shadow: none; }
+body.busy.over .stop-btn { display: block; }

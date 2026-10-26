@@ -86,18 +86,21 @@ class LhClient {
     this.env = env;
   }
 
-  _run(args, opts = {}) {
-    return runLh(this.bin, args, { env: this.env || withToolPath(cleanEnv(), this.bin), ...opts });
+  // Every lh call is cancellable: cancel() stops all that are in flight (agent run, device lookup, daemon start...).
+  async _run(args, opts = {}) {
+    const ac = new AbortController();
+    this._active = this._active || new Set();
+    this._active.add(ac);
+    try {
+      return await runLh(this.bin, args, { env: this.env || withToolPath(cleanEnv(), this.bin), signal: ac.signal, ...opts });
+    } finally {
+      this._active.delete(ac);
+    }
   }
 
-  // Stop whatever agent run is in flight (the user pressed Escape).
+  // The user pressed Stop (or Esc): kill whatever lh is doing right now.
   cancel() {
-    if (this._abort) this._abort.abort();
-  }
-
-  _beginRun() {
-    this._abort = new AbortController();
-    return this._abort.signal;
+    for (const ac of this._active || []) ac.abort();
   }
 
   // ---- agent configuration -------------------------------------------------
@@ -266,27 +269,28 @@ class LhClient {
 
   // One conversational turn. Reusing `topicId` keeps the pet's long-term
   // history inside LobeHub. Returns { text, topicId, cost }.
-  async run({ agentId, prompt, topicId, timeoutMs = 120000, tools = [] }) {
-    const signal = this._beginRun();
+  async run({ agentId, prompt, topicId, timeoutMs = 120000, tools = [], device = null }) {
     const base = ['agent', 'run', '-a', agentId, '-p', prompt, '--json'];
     if (topicId) base.push('-t', topicId);
-    const toolArgs = tools.flatMap((t) => ['--tool', t]);
-    try {
+    // Optional flags (a specific tool, a specific device). An lh that does not know one of them must not
+    // cost the user the turn: drop the flag the CLI complained about and retry.
+    const optional = [];
+    for (const t of tools) optional.push({ flag: '--tool', args: ['--tool', t] });
+    if (device) optional.push({ flag: '--device', args: ['--device', device] });
+    for (;;) {
       try {
-        return await this._runAgent([...base, ...toolArgs], timeoutMs, signal);
+        return await this._runAgent([...base, ...optional.flatMap((o) => o.args)], timeoutMs);
       } catch (e) {
-        // A newer/older lh may not know --tool: retry once without it rather than losing the turn.
-        if (toolArgs.length && e.code === 'ECLI' && /--tool/.test(e.message)) return await this._runAgent(base, timeoutMs, signal);
-        throw e;
+        const bad = e.code === 'ECLI' && optional.find((o) => e.message.includes(o.flag));
+        if (!bad) throw e;
+        for (let i = optional.length - 1; i >= 0; i--) if (optional[i].flag === bad.flag) optional.splice(i, 1);
       }
-    } finally {
-      this._abort = null;
     }
   }
 
-  async _runAgent(args, timeoutMs, signal) {
+  async _runAgent(args, timeoutMs) {
     // No --timeout flag: newer lh releases reject it. We enforce the limit ourselves (see runLh).
-    const r = await this._run(args, { timeoutMs, signal });
+    const r = await this._run(args, { timeoutMs });
     const parsed = parseRunEvents(r.stdout);
     if (parsed.text) return parsed;
     const detail = (r.stderr || r.stdout).trim().slice(0, 300);

@@ -311,6 +311,7 @@ function bindPetUi() {
       if (on && !confirm('让宠物使用这台电脑？\n它可以读写文件、搜索内容、运行命令，能碰到你账号权限内的所有东西（不是沙盒）。')) return;
       const r = await window.pet.setLocal(on);
       if (r.ok) say(on ? '（已连上这台电脑，要我帮你找什么？）' : '（好，我不碰你的电脑了。）', 'local', 'fallback');
+      else if (r.reason === 'canceled') say('（好，先不弄了。）', 'canceled', 'fallback');
       else if (r.reason !== 'busy') say(`（没成功：${String(r.message || '未知原因').slice(0, 60)}）`, 'error', 'fallback', r.message);
     }
     if (m === 'credits') alert(CREDITS);
@@ -367,6 +368,7 @@ function bindPetUi() {
     for (const img of picked) pushAttachment({ kind: 'image', ...img });
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && thinking) window.pet.cancel(); });
+  $('stop-btn').addEventListener('click', () => { if (thinking) window.pet.cancel(); });
   $('bubble').addEventListener('mouseenter', () => { bubbleHold = true; });
   $('bubble').addEventListener('mouseleave', () => { bubbleHold = false; });
 
@@ -393,6 +395,7 @@ function hudInUse() {
   return document.activeElement === $('chat-input') || !$('chat-row').classList.contains('hidden') || !$('food-menu').classList.contains('hidden') || !$('main-menu').classList.contains('hidden');
 }
 function syncHover() {
+  document.body.classList.toggle('over', pointerInside); // pointer over the window (used by the stop button)
   document.body.classList.toggle('hover', !thinking && (pointerInside || hudInUse()));
 }
 function bindHover() {

@@ -31,6 +31,7 @@ if (args[0] === 'whoami') {
   else console.log('No daemon is running.');
 } else if (args[0] === 'connect') {
   if (process.env.FAKE_LH_CONNECT_FAIL) { console.error('connect failed'); process.exit(1); }
+  if (process.env.FAKE_LH_CONNECT_DELAY_MS) { setTimeout(() => process.exit(0), Number(process.env.FAKE_LH_CONNECT_DELAY_MS)); return; }
   if (fs.existsSync(path.join(dir, 'daemon-started'))) { console.error('Daemon is already running (PID 4242).'); process.exit(1); }
   // "daemon start": the machine shows up as an online device (unless one is already listed)
   if (!fs.existsSync(path.join(dir, 'devices.json'))) fs.writeFileSync(path.join(dir, 'devices.json'), JSON.stringify([{ deviceId: 'dev_DAEMON', hostname: 'fake', platform: process.platform, online: true, channels: [{ channel: 'cli', connectedAt: new Date().toISOString() }] }]));
@@ -38,6 +39,9 @@ if (args[0] === 'whoami') {
   fs.writeFileSync(path.join(dir, 'daemon-started'), '1');
   console.log('Daemon started (PID 4242).');
 } else if (args[0] === 'agent' && args[1] === 'edit') {
+  if (process.env.FAKE_LH_NO_AGENCY && args.includes('--agency-config-file')) { console.error("error: unknown option '--agency-config-file'"); process.exit(1); }
+  const editDelay = Number(process.env.FAKE_LH_EDIT_DELAY_MS || 0);
+  if (editDelay) { setTimeout(() => { fs.appendFileSync(path.join(dir, 'edits.log'), JSON.stringify({ agentId: args[2], systemRole: 'late' }) + '\n'); console.log('updated'); }, editDelay); return; }
   const rec = { agentId: args[2], systemRole: args.includes('-s') ? args[args.indexOf('-s') + 1] : null };
   const i = args.indexOf('--agency-config-file');
   if (i >= 0) rec.agencyConfig = JSON.parse(fs.readFileSync(args[i + 1], 'utf8'));
@@ -63,8 +67,10 @@ if (args[0] === 'whoami') {
   if (process.env.FAKE_LH_FAIL_RUN) { console.error('boom'); process.exit(1); }
   const prompt = args[args.indexOf('-p') + 1];
   const topic = args.includes('-t') ? args[args.indexOf('-t') + 1] : 'tpc_FAKE1';
+  if (process.env.FAKE_LH_NO_DEVICE_FLAG && args.includes('--device')) { console.error("error: unknown option '--device'"); process.exit(1); }
   const tools = args.map((a, i) => (a === '--tool' ? args[i + 1] : null)).filter(Boolean);
-  fs.appendFileSync(path.join(dir, 'runs.log'), JSON.stringify({ prompt, tools }) + '\n');
+  const device = args.includes('--device') ? args[args.indexOf('--device') + 1] : null;
+  fs.appendFileSync(path.join(dir, 'runs.log'), JSON.stringify({ prompt, tools, device }) + '\n');
   const out = JSON.stringify([
     { type: 'agent_runtime_init', data: { topicId: topic } },
     { type: 'stream_end', data: { finalContent: process.env.FAKE_LH_LONG_REPLY ? Array.from({ length: 14 }, (_, i) => `第${i + 1}行：这是一条很长很长的回复，用来检查气泡会不会滚动。`).join('\n') : `echo: ${prompt.split('\n').pop()}`, usage: { cost: 0.001 } } },

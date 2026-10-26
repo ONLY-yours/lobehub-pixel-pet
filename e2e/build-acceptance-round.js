@@ -163,6 +163,14 @@ const CHECKS = [
   { id: 'daemon-relaunch', category: '本机能力', title: '每次启动应用都会确保守护进程在运行，已在运行时不重复启动', steps: ['daemon:relaunching the app starts the daemon again', 'daemon:relaunching while the daemon is already running'],
     method: '把守护进程“弄丢”后重启应用；再在守护进程正常时重启一次。', expected: '前者重新启动守护进程，后者不会启动第二个。',
     ok: '守护进程消失后重启应用，它被重新启动；守护进程已在运行时再重启应用，没有启动第二个（真实 CLI 对重复启动会报错退出，应用已把“已在运行”当作成功处理）。', texts: ['run-log.txt'], noShot: true },
+  { id: 'stop-button', category: '工作状态', title: '宠物思考时，鼠标悬停只出现一个“停止”按钮，点击即可打断', steps: ['busy:hovering while the pet works shows only a Stop button'],
+    method: '发送一个耗时的任务，思考中把鼠标放到宠物上，再点“停止”。', expected: '悬停时只出现“停止”按钮，状态条和其他按钮仍隐藏；鼠标移开按钮消失；点击后任务被打断，宠物说“不想了”。',
+    ok: '思考时悬停只出现红色的“停止”按钮，状态条、名字行和其他按钮仍然隐藏；鼠标移开按钮消失，移回又出现；点击后任务被终止，宠物说“好吧，不想了。”，界面恢复。移开一步用的是合成的鼠标离开事件。',
+    shots: [['busy:hovering while the pet works shows only a Stop button', '点击“停止”之后的画面。']], extra: [['stop-visible.png', '思考中悬停：只有宠物、“思考中”气泡和红色的“停止”按钮。']] },
+  { id: 'old-lh', category: '本机能力', title: '旧版 lh 写不进设备绑定时，宠物仍能访问这台电脑，并提示升级 lh', steps: ['oldlh:an lh that cannot write the binding'],
+    method: '用一个不认 --agency-config-file 的假 lh（模拟旧版）孵化，随后发一条消息。', expected: '气泡提示升级 lh；之后每次运行都用 --device 指定设备，并带上本机工具。',
+    ok: '绑定失败后宠物没有放弃：气泡提示“升级 lh”，并且后续运行直接指定了设备并带上本机工具。这是用假 lh 模拟旧版，真实旧版 lh 上没有验证。',
+    shots: [['oldlh:an lh that cannot write the binding', '旧版 lh 场景的画面。']] },
 ];
 
 const plan = [];

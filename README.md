@@ -11,7 +11,7 @@ The fire, water and grass pets are pixel art generated in code (`src/renderer/sp
 ## What the pet can do (v0.2)
 
 - **Works first, charms second.** The persona is flexible: simple jobs (look something up, search the web, calculate, translate, write) are just done, in the pet's voice. Replies aim for 50 characters or fewer, and big tasks are done one step at a time. Longer replies scroll inside the bubble.
-- **Busy means busy.** While the pet is thinking or working, only the pet and a "思考中" bubble show; the bars, buttons and chat box stay hidden even on hover, and care actions are refused. Press **Esc** to stop a running task.
+- **Busy means busy.** While the pet is thinking or working, only the pet and a "思考中" bubble show; the bars, buttons and chat box stay hidden even on hover, and care actions are refused. While it works, hovering shows only a **■ 停止 (Stop)** button; click it (or press **Esc**) to interrupt, including while the device is being connected.
 - **Pictures.** Paste with Ctrl/⌘+V, drag an image onto the window, or use the 📎 button (up to 4 images, 8 MB each). The picture is uploaded with `lh file upload`, attached to a user message in the pet's topic, and the next agent run sees it.
 - **Use this computer.** The hatch screen has an option (on by default) to let the pet use your computer. It works through LobeHub's device mechanism: when you claim a pet, and every time the app starts, it makes sure the `lh connect --daemon` background process is running (it checks `lh connect status` first, because the CLI refuses to start a second one), finds this machine's online device, and binds the pet's agent to it (`agencyConfig.boundDeviceId`, `executionTarget: local`). If the daemon cannot start but the LobeHub desktop app already has this computer online, the pet keeps working through that and tells you. Toggle it from the ⋯ menu; turning it off unbinds the agent but leaves the daemon running, because it may also be yours.
 - **Drop files on the pet.** Any file or folder dragged onto the window (or pasted from Finder) is handed over **by path only**: nothing is uploaded, and the agent reads it through the bound device. If computer access is off, the app asks to turn it on first. Screenshots from the clipboard have no path, so they are uploaded as pictures for the model to look at.
@@ -69,7 +69,7 @@ xvfb-run -a node e2e/run.js all       # drives the real Electron app; `live` use
 
 ## Known gaps
 
-- Binding the agent to your computer uses `lh agent edit --agency-config-file`, which old `lh` releases do not have (it is missing in 0.0.44 and earlier). If the log says `unknown option '--agency-config-file'`, update: `npm install -g @lobehub/cli@latest`.
+- Binding the agent to your computer uses `lh agent edit --agency-config-file`, which old `lh` releases do not have (it is missing in 0.0.44 and earlier). With such an lh the pet falls back to naming the device on every run (`--device <id>`) and tells you to update: `npm install -g @lobehub/cli@latest`. The fallback has only been tested with a fake CLI.
 - Reading and writing local files through the bound device has only been tested with a fake CLI by the author; real behaviour depends on LobeHub's device mechanism.
 - The macOS build is unsigned and has only been built by CI, not opened on a real Mac by the author. Linux and Windows builds are not set up.
 - The real `lh login` browser flow has not been exercised end to end: tests use a fake `lh` that prints the same lines the real CLI does (read from the CLI source).
