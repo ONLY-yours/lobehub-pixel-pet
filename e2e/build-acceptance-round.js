@@ -171,6 +171,10 @@ const CHECKS = [
     method: '用一个不认 --agency-config-file 的假 lh（模拟旧版）孵化，随后发一条消息。', expected: '气泡提示升级 lh；之后每次运行都用 --device 指定设备，并带上本机工具。',
     ok: '绑定失败后宠物没有放弃：气泡提示“升级 lh”，并且后续运行直接指定了设备并带上本机工具。这是用假 lh 模拟旧版，真实旧版 lh 上没有验证。',
     shots: [['oldlh:an lh that cannot write the binding', '旧版 lh 场景的画面。']] },
+  { id: 'hover-strict', category: '紧凑界面', title: '只要鼠标不在宠物上，所有控件都不显示，即使聊天框是打开的', steps: ['busy:with the chat box open, moving the pointer away hides everything'],
+    method: '打开聊天框并输入草稿，然后让鼠标离开窗口，再移回来。', expected: '移开后状态条、按钮、聊天框全部隐藏，输入框不再占着键盘焦点；移回来草稿还在。',
+    ok: '聊天框打开着、输入框有焦点时，鼠标一移开，所有控件立刻隐藏，输入框失去键盘焦点；鼠标移回后草稿原样还在。移开一步用的是合成的鼠标离开事件，不是真实的指针移出。',
+    shots: [['busy:with the chat box open, moving the pointer away hides everything', '鼠标移回后：草稿还在，控件重新出现。']], extra: [['away-hidden.png', '聊天框打开时鼠标移开：只剩宠物，没有任何控件。']] },
 ];
 
 const plan = [];
