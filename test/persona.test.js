@@ -5,7 +5,7 @@ const { buildSystemRole, buildStateBlock, buildEventPrompt } = require('../src/c
 const st = require('../src/core/pet-state');
 
 test('system role carries name, species personality and a Chinese-by-default rule', () => {
-  for (const [id, zh] of [['embit', '焰团'], ['bubbo', '泡鲸'], ['sprig', '叶芽']]) {
+  for (const [id, zh] of [['embit', '焰团'], ['bubbo', '泡鲸'], ['sprig', '叶芽'], ['dafeiyu', '大肥鱼']]) {
     const r = buildSystemRole({ speciesId: id, name: '小测' });
     assert.match(r, /小测/);
     assert.match(r, new RegExp(zh));

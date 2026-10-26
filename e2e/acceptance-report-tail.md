@@ -1,13 +1,14 @@
-## Verification
+## 验证
 
-Unit tests (`npm test`) and the E2E suite (`xvfb-run -a node e2e/run.js all`) were run before this round. They are reported here as one line and are not acceptance checks.
+单元测试（`npm test`）与端到端测试（`xvfb-run -a node e2e/run.js all`）在本轮前已运行。它们只在这里以一行带过，不作为验收检查。
 
-## Limitations and disclosures
+## 限制与说明
 
-- Feeding, evolution and release were driven against the same fake CLI, so they prove the app's behaviour, not LobeHub's. Deleting a real LobeHub agent was not exercised in this round.
-- The login screen was driven with a fake `lh` CLI that prints the same lines as the real one (read from the CLI source). The real `lh login` browser flow was not run.
-- The app ran under Xvfb with an opaque window. Transparent background, always-on-top and dragging on a real desktop were not seen.
-- No installer is packaged yet; the app runs from source with `npm start`.
-- No independent checker reviewed the plan or evidence in this round; the builder inspected the screenshots itself.
-- **The four checks that need a live LobeHub agent run are reported as blocked.** While this round was being prepared, `lh agent run` stopped completing: the reply text arrived but the run never finished, on both `deepseek-flash` and `claude-haiku-5-5`, for more than 25 minutes. Earlier in the same session the live scenario passed several times, but that evidence was not retained, so no pass is claimed for it here. Append a repair round with `--acceptance` once runs complete again (`xvfb-run -a node e2e/run.js live`, then `node e2e/build-acceptance-round.js`).
-- One earlier live run showed a canned line instead of a model line for the proactive check. The cause was not established; the app now records the reason on every canned line.
+- **登录界面使用假 `lh` CLI**：它打印的行与真实 CLI 一致（来自 CLI 源码）。真实的 `lh login` 浏览器流程没有运行。
+- **真实链路使用你的个人空间 API key**：以环境变量 `LOBEHUB_CLI_API_KEY` 传入，在个人空间里创建并删除了测试用 agent，没有碰你已有的宠物。该 key 在工作区里会被拒绝（UNAUTHORIZED），所以没有在任何工作区里验证。
+- 测试在 Xvfb 下用不透明窗口运行，看不到透明背景、置顶和拖动。
+- “鼠标移开后控件隐藏”一步，使用的是合成的鼠标离开事件，不是真实的指针移出窗口。
+- 大肥鱼的动画只在 Linux 下的 Electron 里验证过能播放；macOS 安装包（含大肥鱼）还没有重新打包，也没在真实 Mac 上打开过。
+- 大肥鱼素材来自 dsh-pet 项目，仅限非商业使用，署名见应用内“素材署名”与 README。
+- 没有独立的检查员评审本轮计划与证据，截图由构建者本人查看。
+- 打开聊天框时，输入条会盖住宠物的下半身（截图里可见），不影响功能，属于界面上的小瑕疵。

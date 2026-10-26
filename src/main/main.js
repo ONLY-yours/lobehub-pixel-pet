@@ -11,7 +11,7 @@ const { FOODS } = require('../core/pet-state');
 
 const TEST_MODE = process.env.PIXELPET_TEST === '1';
 const HEARTBEAT_MS = TEST_MODE ? 2000 : 30 * 1000;
-const SIZES = { onboarding: { w: 680, h: 480 }, pet: { w: 320, h: 380 } };
+const SIZES = { onboarding: { w: 680, h: 480 }, pet: { w: 230, h: 292 } };
 
 if (process.env.PIXELPET_DATA_DIR) app.setPath('userData', process.env.PIXELPET_DATA_DIR);
 if (TEST_MODE) app.commandLine.appendSwitch('no-sandbox');
@@ -80,7 +80,7 @@ function wire() {
           if (p.browserFailed && p.url && /^https:\/\//.test(p.url)) shell.openExternal(p.url);
         },
       });
-      place('pet');
+      // the window shrinks to pet size when the renderer enters the pet screen (see 'place')
       return { ok: true, view };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -98,6 +98,7 @@ function wire() {
     const [x, y] = win.getPosition();
     win.setPosition(Math.round(x + dx), Math.round(y + dy));
   });
+  ipcMain.on('place', (_e, mode) => { if (mode in SIZES) place(mode); });
   ipcMain.on('quit', () => app.quit());
 
   if (TEST_MODE) {

@@ -1,7 +1,9 @@
 'use strict';
-// Turns the artifacts of `e2e/run.js all` (out/e2e) into an `lh acceptance` round directory:
+// Turns the artifacts of `e2e/run.js all` (out/e2e/results.json + files) into an `lh acceptance` round:
 //   .acceptances/standalone-pixel-pet/<timestamp>-<slug>/{result.json,report.md,proposal.md,assets/}
-// A planned check whose step did not run is reported as `blocked`, a failed step as `fail`; nothing is invented.
+// A check whose step did not run is `blocked`, a failed step is `fail`; nothing is invented.
+// Report text is Chinese because the acceptance account's report language is zh-CN
+// (`lh acceptance preflight` prints it; adjust this file if your account says otherwise).
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -17,106 +19,141 @@ if (!fs.existsSync(path.join(ROOT, '.acceptances', '.gitignore'))) fs.writeFileS
 
 // step spec: 'scenario:name prefix'
 const find = (spec) => { const [sc, ...rest] = spec.split(':'); const sub = rest.join(':'); return results.find((r) => r.scenario === sc && r.name.startsWith(sub)); };
-const asset = (file, description) => {
+const copy = (file, description) => {
   const src = path.join(OUT, file);
-  if (!fs.existsSync(src)) return null;
+  if (!file || !fs.existsSync(src)) return null;
   fs.copyFileSync(src, path.join(dir, 'assets', file));
   return { path: `assets/${file}`, description };
 };
 
+const TEXTS = {
+  'run-log.txt': '端到端测试的完整控制台日志：每一步一行 PASS 或 FAIL，并带有实测数值。',
+  'agent-view-excerpt.txt': '`lh agent view` 对刚创建的 agent 的输出（已去掉身份与工作区相关行），可见宠物名字与物种人设。',
+  'chat-transcript.txt': '真实运行中每一条由模型生成的气泡文字及其来源标记，含主人发送的消息。',
+  'release-check.txt': '放生宠物时，假 CLI 记录下的 `lh agent delete` 调用。',
+  'release-check-live.txt': '放生后对原 agent id 执行 `lh agent view`，因 agent 已不存在而失败。',
+};
+
 const CHECKS = [
-  { id: 'egg-choice', category: 'First run', title: 'First launch offers three eggs to choose from', steps: ['fresh:first launch shows three eggs'],
-    method: 'Launch the app with no saved pet and look at the first screen.', expected: 'Three pixel-art eggs (fire, water, grass) are shown and hatching is disabled until one is chosen.',
-    ok: 'The first screen shows three distinct pixel eggs labelled fire, water and grass; the Hatch button is disabled.',
-    shots: [['01-fresh-first-launch-shows-three-eggs.png', 'First-launch window showing three pixel-art eggs and a disabled Hatch button.']] },
-  { id: 'egg-select', category: 'First run', title: 'Choosing an egg highlights it and describes its element', steps: ['fresh:choosing an egg enables hatching'],
-    method: 'Click the water egg and type a name.', expected: 'The egg is highlighted, its element and personality blurb appear, the name field accepts input and Hatch becomes enabled.',
-    ok: 'The water egg is highlighted with its blurb shown under the eggs; the name field holds the typed name and Hatch is enabled.',
-    shots: [['02-fresh-choosing-an-egg-enables-hatching-and-sho.png', 'Water egg selected and highlighted, blurb text below, name field filled, Hatch enabled.']] },
-  { id: 'login-flow', category: 'LobeHub login', title: 'Hatching starts the LobeHub login and shows the device code', steps: ['fresh:hatching invokes lh login'],
-    method: 'Click Hatch while logged out (fake lh CLI that prints the same lines as the real one).', expected: 'The progress screen shows the login step active together with the verification code and URL.',
-    ok: 'The progress screen marks the login step active and shows the code ABCD-1234 with the verification URL. This used a fake CLI; the real browser login was not run.',
-    shots: [['03-fresh-hatching-invokes-lh-login-and-shows-the-.png', 'Hatching progress screen: login step active, device code box with code and URL, cracked egg animation.']] },
-  { id: 'pet-after-login', category: 'Agent creation', title: 'After login the pet is created and appears with its chosen name and species', steps: ['fresh:after login the agent is created and the pet appears', 'fresh:CLI call order'],
-    method: 'Let the fake login finish and watch the app.', expected: 'The app creates the agent, the pet appears named as chosen with a first greeting, and the CLI calls happened in the order whoami, login, whoami, agent create, agent run.',
-    ok: 'The water pet appeared with the chosen name, stage and a first greeting bubble; the recorded CLI call order matched, and the agent was created with the species persona in its system role.',
-    shots: [['04-fresh-after-login-the-agent-is-created-and-the.png', 'Pet screen right after hatching: water pet, greeting bubble, need bars, name and stage line, toolbar.']], texts: ['run-log.txt'] },
-  { id: 'persistence', category: 'Persistence', title: 'Restarting the app brings the same pet back', steps: ['fresh:restart goes straight to the pet'],
-    method: 'Close and relaunch the app with the same data directory.', expected: 'The egg screen is skipped and the saved pet is shown.',
-    ok: 'After a restart the app opened directly on the saved pet with its name; the egg screen was not shown.',
-    shots: [['05-fresh-restart-goes-straight-to-the-pet-state-p.png', 'Relaunched app showing the saved pet directly, no egg selection.']] },
-  { id: 'real-agent', category: 'Agent creation', title: 'With a real logged-in lh, a real LobeHub agent is created with the pet persona', steps: ['live:real lh is logged in', 'live:the LobeHub agent exists'],
-    method: 'Pick the grass egg with the real lh CLI (already logged in) and then run `lh agent view` on the created agent.', expected: 'Login is skipped, an agent id is created, and the agent carries the pet name and species persona.',
-    ok: 'Login was skipped, a real agent id was created, and `lh agent view` showed the pet name and species persona.',
-    shots: [['06-live-real-lh-is-logged-in-so-login-is-skipped.png', 'Pet screen right after hatching against the real LobeHub CLI.']], texts: ['agent-view-excerpt.txt'] },
-  { id: 'llm-greeting', category: 'Personality', title: 'The pet greets in character using the real model', steps: ['live:first greeting comes from the real model'],
-    method: 'Read the first bubble after hatching and check its source flag.', expected: 'A short in-character Chinese greeting generated by the agent, not a canned line.',
-    ok: 'The greeting bubble was produced by the live agent (source flag llm) and was short, in character and in Chinese.',
-    shots: [['07-live-first-greeting-comes-from-the-real-model.png', 'Grass pet with its first model-generated greeting bubble.']], texts: ['chat-transcript.txt'] },
-  { id: 'feeding', category: 'Care', title: 'Feeding lowers hunger and shows the food', steps: ['fresh:feeding lowers hunger'],
-    method: 'Force hunger to 80, open Feed and give rice (fake lh CLI).', expected: 'Hunger drops, the food sprite appears and the pet reacts.',
-    ok: 'Hunger fell from 80 to 45 after feeding rice; the food sprite and a reaction bubble were shown.',
-    shots: [['06-fresh-feeding-lowers-hunger-and-shows-food.png', 'Pet eating: rice sprite at its mouth, hunger bar lowered, reaction bubble.']] },
-  { id: 'memory', category: 'Memory', title: 'The pet remembers what the owner told it', steps: ['live:chat: the pet answers and remembers'],
-    method: 'Tell the pet a name and a favourite food, then ask whether it remembers the name.', expected: 'The second reply names the owner correctly (same LobeHub topic).',
-    ok: 'Asked a moment later, the pet answered with the owner name given earlier.',
-    shots: [['09-live-chat-the-pet-answers-and-remembers-what-.png', 'Chat open; the pet bubble recalls the owner name and favourite food.']], texts: ['chat-transcript.txt'] },
-  { id: 'proactive', category: 'Proactive behaviour', title: 'A hungry pet speaks up on its own', steps: ['live:proactive: a hungry pet speaks up'],
-    method: 'Force hunger to 95, clear the speaking cooldown and trigger one heartbeat without typing anything.', expected: 'The pet asks for food in a model-generated line.',
-    ok: 'Without any user input the pet asked for food in a line generated by the live agent (source flag llm).',
-    shots: [['10-live-proactive-a-hungry-pet-speaks-up-on-its-.png', 'Pet with an empty hunger bar and an unprompted request for food.']], texts: ['chat-transcript.txt'] },
-  { id: 'evolution', category: 'Growth', title: 'Enough experience evolves the pet and changes its sprite', steps: ['fresh:enough xp evolves the pet'],
-    method: 'Set experience to 59 and pat the pet once (fake lh CLI).', expected: 'Stage changes from baby to child and the sprite is visibly larger.',
-    ok: 'The stage line changed from baby to child and the sprite grew.',
-    shots: [['07-fresh-enough-xp-evolves-the-pet-baby-child-and.png', 'Pet after evolution, stage line reading child, larger sprite.'], ['evolve-before.png', 'The pet sprite just before evolving, for size comparison.']] },
-  { id: 'release', category: 'Lifecycle', title: 'Releasing the pet deletes its agent through lh and returns to egg selection', steps: ['fresh:release deletes the agent through lh'],
-    method: 'Open the menu, choose release-and-delete and accept the confirmation (fake lh CLI that records its calls).', expected: 'The egg screen returns and the app asks lh to delete the pet agent.',
-    ok: 'The egg screen came back and the fake CLI recorded `lh agent delete <id> --yes` for the pet agent. Deletion of a real LobeHub agent was not exercised in this round.',
-    shots: [['08-fresh-release-deletes-the-agent-through-lh-and.png', 'Egg selection screen shown again after releasing the pet.']], texts: ['release-check.txt'] },
-  { id: 'pixel-art', category: 'Pixel art', title: 'Three species with distinct looks across growth stages and moods', steps: ['art:sprite sheet'],
-    method: 'Render every species at every stage in every mood from the app sprite code.', expected: 'Fire, water and grass pets look different, evolve visibly and show different faces per mood.',
-    ok: 'The sheet shows nine species/stage rows and five mood columns; species are clearly distinct, stages grow, and moods change the face and effects.',
-    shots: [['sprite-sheet.png', 'Contact sheet: rows embit/bubbo/sprig by baby/child/adult, columns idle, happy, sad, hungry, sleep.']] },
+  { id: 'egg-choice', category: '首次启动', title: '首次启动提供四颗蛋供选择', steps: ['fresh:first launch shows four eggs'],
+    method: '无存档启动应用，查看第一屏。', expected: '显示四颗像素蛋（火、水、草、鲸），选中前“孵化”按钮不可用。',
+    ok: '第一屏出现四颗可区分的像素蛋，标注为火、水、草、鲸，“孵化”按钮为禁用状态。',
+    shots: [['fresh:first launch shows four eggs', '首次启动窗口：四颗像素蛋，孵化按钮禁用。']] },
+  { id: 'egg-select', category: '首次启动', title: '选中蛋后高亮并显示属性与性格介绍', steps: ['fresh:choosing an egg enables hatching'],
+    method: '点击水之蛋并输入名字。', expected: '蛋高亮，显示属性和性格介绍，名字框可输入，“孵化”可用。',
+    ok: '水之蛋被高亮，蛋下方显示介绍文字；名字框里是输入的名字，“孵化”可点。',
+    shots: [['fresh:choosing an egg enables hatching', '选中水之蛋后的界面：蛋高亮、介绍文字、名字已填、孵化可用。']] },
+  { id: 'login-flow', category: 'LobeHub 登录', title: '点击孵化会启动 LobeHub 登录并显示验证码', steps: ['fresh:hatching invokes lh login'],
+    method: '未登录状态点击“孵化”（使用假 lh CLI，输出格式与真实 CLI 一致）。', expected: '进度页里登录步骤高亮，并显示验证码和链接。',
+    ok: '进度页登录步骤被标为进行中，显示验证码 ABCD-1234 和验证链接。使用的是假 CLI，真实的浏览器登录未运行。',
+    shots: [['fresh:hatching invokes lh login', '孵化进度页：登录步骤进行中、验证码框、裂开的蛋。']] },
+  { id: 'pet-after-login', category: '创建 agent', title: '登录后创建宠物，并以所选名字和物种出现', steps: ['fresh:after login the agent is created and the pet appears', 'fresh:CLI call order'],
+    method: '让假登录完成，观察应用。', expected: '宠物按所选名字出现并说出第一句话；CLI 调用顺序为 whoami、login、whoami、agent create、agent run。',
+    ok: '水系宠物以所选名字出现，并带有第一句问候；记录到的 CLI 调用顺序一致，agent 创建时 system role 里带有物种人设。',
+    shots: [['fresh:after login the agent is created and the pet appears', '孵化后的宠物界面：水系宠物与问候气泡。']], texts: ['run-log.txt'] },
+  { id: 'persistence', category: '持久化', title: '重启应用后同一只宠物回来', steps: ['fresh:restart goes straight to the pet'],
+    method: '关闭并用同一数据目录重新启动应用。', expected: '跳过选蛋，直接显示已保存的宠物。',
+    ok: '重启后应用直接打开已保存的宠物，没有再出现选蛋界面。',
+    shots: [['fresh:restart goes straight to the pet', '重启后的应用：直接显示已保存的宠物，不出现选蛋。']] },
+  { id: 'rest-only-pet', category: '紧凑界面', title: '平时只显示宠物，没有按钮、状态条和输入框，窗口很小', steps: ['fresh:at rest only the pet is shown'],
+    method: '宠物出现后不移动鼠标，查看窗口与控件。', expected: '只看到宠物（有话时才有气泡），窗口不超过 240×300。',
+    ok: '静止时界面上只有宠物，按钮、状态条、名字行、输入框都不可见；窗口尺寸如括号所示。', useNote: true,
+    shots: [['fresh:at rest only the pet is shown', '静止状态：只有宠物，没有任何控件。']] },
+  { id: 'hover-controls', category: '紧凑界面', title: '鼠标悬停时出现控件，移开后再次隐藏', steps: ['fresh:hovering the pet reveals the controls'],
+    method: '把鼠标移到窗口上，再移出（移出一步由测试触发离开事件）。', expected: '悬停时出现状态条、名字行和按钮，移开后全部隐藏。',
+    ok: '悬停后状态条、名字行和五个按钮淡入；移开后又全部消失。移出一步使用的是合成的鼠标离开事件，不是真实的指针移出。',
+    shots: [['fresh:hovering the pet reveals the controls', '移开鼠标后的画面（控件已隐藏）。']], extra: [['hover-shown.png', '鼠标悬停时的画面：状态条、名字行、按钮均已显示。']] },
+  { id: 'feeding', category: '日常照顾', title: '喂食会降低饥饿并显示食物', steps: ['fresh:feeding lowers hunger', 'live:feeding lowers hunger'],
+    method: '把饥饿值设为 80，打开“喂食”并给白饭（假 CLI 与真实 lh 各跑一次）。', expected: '饥饿值下降，食物图案出现，宠物有反应。',
+    ok: '喂白饭后饥饿值从 80 降到 45 左右，出现食物图案和反应气泡（假 CLI 与真实 lh 两次都如此）。',
+    shots: [['fresh:feeding lowers hunger', '喂食中：嘴边有食物，饥饿条下降，反应气泡。（假 CLI）'], ['live:feeding lowers hunger', '喂食中的画面。（真实 lh）']] },
+  { id: 'evolution', category: '成长', title: '经验足够时宠物进化，形象变大', steps: ['fresh:enough xp evolves the pet', 'live:enough xp evolves the pet'],
+    method: '把经验设为 59 并摸一下宠物（假 CLI 与真实 lh 各跑一次）。', expected: '阶段由幼崽变为少年，形象明显变大。',
+    ok: '名字行里的阶段由“幼崽”变为“少年”，形象变大（两次都如此）。',
+    shots: [['fresh:enough xp evolves the pet', '进化后：阶段为少年，形象更大。（假 CLI）'], ['live:enough xp evolves the pet', '进化后的画面。（真实 lh）']], extra: [['evolve-before.png', '进化前一刻的形象，用于比较大小。']] },
+  { id: 'release', category: '生命周期', title: '放生会通过 lh 删除 agent 并回到选蛋界面', steps: ['fresh:release deletes the agent through lh', 'live:release deletes the real agent'],
+    method: '打开菜单选“放生并删除 agent”并确认（假 CLI 记录调用；真实 lh 再查 agent 是否已不存在）。', expected: '回到选蛋界面，并且 agent 已被删除。',
+    ok: '回到了选蛋界面；假 CLI 记录到 `lh agent delete <id> --yes`；真实运行里对旧 agent id 执行 `lh agent view` 失败，说明真实 agent 已被删除。',
+    shots: [['fresh:release deletes the agent through lh', '放生后再次出现的选蛋界面。（假 CLI）'], ['live:release deletes the real agent', '放生后再次出现的选蛋界面。（真实 lh）']], texts: ['release-check.txt', 'release-check-live.txt'] },
+  { id: 'pixel-art', category: '像素画', title: '三个像素物种在各成长阶段和心情下外观各异', steps: ['art:sprite sheet'],
+    method: '用应用自己的绘制代码渲染每个物种、每个阶段、每种心情。', expected: '火、水、草三种宠物外观不同，会明显成长，不同心情脸不同。',
+    ok: '总览图共九行（三物种×三阶段）五列（待机、开心、难过、饥饿、睡觉）；物种差异明显，阶段递增变大，心情改变脸和特效。',
+    extra: [['sprite-sheet.png', '总览图：行为 embit/bubbo/sprig × 幼崽/少年/成年，列为待机、开心、难过、饥饿、睡觉。']] },
+  { id: 'dafeiyu-egg', category: '大肥鱼', title: '蛋界面新增第四颗“鲸之蛋”，即大肥鱼', steps: ['dafeiyu:the egg screen offers four eggs'],
+    method: '首次启动，点击第四颗蛋。', expected: '共四颗蛋，第四颗为鲸之蛋，介绍里提到大肥鱼，可起名。',
+    ok: '界面共四颗蛋，第四颗标注“鲸之蛋”，介绍文字写明是大肥鱼并注明非 DeepSeek 官方，名字框可输入。',
+    shots: [['dafeiyu:the egg screen offers four eggs', '选中鲸之蛋：深蓝蛋被高亮，介绍里写着大肥鱼。']] },
+  { id: 'dafeiyu-hatch', category: '大肥鱼', title: '孵化大肥鱼时播放“蓝鲸现世”动画', steps: ['dafeiyu:hatching plays the'],
+    method: '选鲸之蛋并孵化，观察孵化画面。', expected: '孵化画面里出现大肥鱼的透明动画，窗口没有被挤压。',
+    ok: '孵化画面中播放大肥鱼的出场动画，孵化步骤列表保持正常版式。',
+    shots: [['dafeiyu:hatching plays the', '孵化画面：大肥鱼出场动画，步骤列表正常。']] },
+  { id: 'dafeiyu-pet', category: '大肥鱼', title: '大肥鱼以透明视频出现在小窗口里，平时不显示控件', steps: ['dafeiyu:the pet appears as a transparent video'],
+    method: '孵化完成后不移动鼠标，查看窗口和视频。', expected: '视频透明播放（待机动画），窗口不超过 240×300，没有控件。',
+    ok: '大肥鱼以透明视频播放待机动画，窗口很小，没有任何控件显示；视频尺寸 640 宽，正在播放。', useNote: true,
+    shots: [['dafeiyu:the pet appears as a transparent video', '大肥鱼在小窗口中的待机画面，无控件。']] },
+  { id: 'dafeiyu-feed', category: '大肥鱼', title: '悬停后出现控件，喂白饭会播放吃饭动画', steps: ['dafeiyu:hovering shows the controls'],
+    method: '把饥饿值设为 80，悬停后点“喂食”选白饭。', expected: '出现控件，动画切换为“吃白饭”。',
+    ok: '悬停后控件出现；喂白饭后视频切换到 eat_rice 动画，宠物有反应气泡。',
+    shots: [['dafeiyu:hovering shows the controls', '大肥鱼悬停状态：控件已出现，正在吃饭动画中。']] },
+  { id: 'dafeiyu-persona', category: '大肥鱼', title: '大肥鱼的人设被写进 agent', steps: ['dafeiyu:the agent was created with the'],
+    method: '孵化大肥鱼后检查创建 agent 时传入的 system role 和标题。', expected: 'system role 含“大肥鱼”和“鱼片”，标题为“Mow (Dafeiyu)”。',
+    ok: '创建 agent 时 system role 里包含大肥鱼与“鱼片”的称呼，标题为“Mow (Dafeiyu)”。', texts: ['run-log.txt'], noShot: true },
+  { id: 'real-agent', category: '创建 agent', title: '使用真实 lh 创建真实 agent，并带有宠物人设', steps: ['live:real lh is logged in', 'live:the LobeHub agent exists'],
+    method: '用真实 lh（个人空间 API key）选草之蛋孵化，再对创建出的 agent 执行 `lh agent view`。', expected: '跳过登录，生成 agent id，agent 带有宠物名字和物种人设。',
+    ok: '跳过了登录，创建出真实的 agent id，`lh agent view` 显示宠物名字与物种人设。',
+    shots: [['live:real lh is logged in', '对接真实 LobeHub CLI 孵化后的宠物界面。']], texts: ['agent-view-excerpt.txt'] },
+  { id: 'llm-greeting', category: '性格', title: '宠物用真实模型以角色口吻打招呼', steps: ['live:first greeting comes from the real model'],
+    method: '查看孵化后的第一条气泡及其来源标记。', expected: '由 agent 生成的简短中文问候，而不是预设台词。',
+    ok: '问候气泡来自真实 agent（来源标记为 llm），简短、符合角色，且是中文。',
+    shots: [['live:first greeting comes from the real model', '草系宠物的第一句由模型生成的问候。']], texts: ['chat-transcript.txt'] },
+  { id: 'memory', category: '记忆', title: '宠物记得主人说过的话', steps: ['live:chat: the pet answers and remembers'],
+    method: '先告诉宠物名字和爱吃的东西，随后问它是否记得名字。', expected: '第二次回复里正确叫出主人的名字（同一个 LobeHub topic）。',
+    ok: '隔了一轮再问，宠物答出了此前告诉它的主人名字。',
+    shots: [['live:chat: the pet answers and remembers', '聊天框已打开，气泡里宠物回忆起主人的名字和爱吃的食物。']], texts: ['chat-transcript.txt'] },
+  { id: 'proactive', category: '主动行为', title: '饿了的宠物会主动开口', steps: ['live:proactive: a hungry pet speaks up'],
+    method: '把饥饿值设为 95、清掉说话冷却并触发一次心跳，不输入任何内容。', expected: '宠物用模型生成的话主动要吃的。',
+    ok: '没有任何用户输入，宠物用真实 agent 生成的话（来源标记 llm）主动要吃的。',
+    shots: [['live:proactive: a hungry pet speaks up', '饥饿条见底，宠物主动提出想吃东西。']], texts: ['chat-transcript.txt'] },
 ];
 
 const plan = [];
 const cases = [];
 for (const c of CHECKS) {
-  plan.push({ id: c.id, title: c.title, category: c.category, verifier: 'agent', method: c.method, expected: c.expected, requiredEvidence: ['screenshot', ...(c.texts ? ['text'] : [])] });
+  const hasShot = !c.noShot;
+  plan.push({ id: c.id, title: c.title, category: c.category, verifier: 'agent', method: c.method, expected: c.expected, requiredEvidence: [...(hasShot ? ['screenshot'] : []), ...(c.texts ? ['text'] : [])] });
   const recs = c.steps.map(find);
   const ran = recs.filter(Boolean);
   let status = 'pass';
   let observation = c.ok;
   if (ran.length < c.steps.length) {
     status = 'blocked';
-    observation = 'This check did not run in this round, so it is not claimed.';
+    observation = `本轮没有执行这项检查（缺少步骤：${c.steps.filter((_, i) => !recs[i]).join('、')}），不声称通过。`;
   } else if (ran.some((r) => r.status === 'fail')) {
     status = 'fail';
     const bad = ran.find((r) => r.status === 'fail');
-    observation = `Failed: ${bad.note.replace(/[^\x00-\x7F]+/g, '…')}`;
+    observation = `未通过：${bad.name}。${bad.note}`;
+  } else if (c.useNote && ran[0].note) {
+    observation = `${c.ok}（${ran[0].note}）`;
   }
   const evidence = [];
-  for (const [f, d] of c.shots) { const e = asset(f, d); if (e) evidence.push(e); }
-  for (const t of c.texts || []) {
-    const d = { 'run-log.txt': 'Full console log of the E2E run: one PASS or FAIL line per step, with the observed values.', 'agent-view-excerpt.txt': 'Output of `lh agent view` for the created agent (identity lines removed), showing the pet name and persona.', 'chat-transcript.txt': 'Raw bubble text and source flag for each model-generated line in the live run, including the messages the owner sent.', 'release-check.txt': 'The `lh agent delete` call recorded by the fake CLI when the pet was released.' }[t];
-    const e = asset(t, d); if (e) evidence.push(e);
-  }
+  for (const [spec, d] of c.shots || []) { const r = find(spec); const e = r && r.shot && copy(r.shot, d); if (e) evidence.push(e); }
+  for (const [f, d] of c.extra || []) { const e = copy(f, d); if (e) evidence.push(e); }
+  for (const t of c.texts || []) { const e = copy(t, TEXTS[t]); if (e) evidence.push(e); }
   cases.push({ id: c.id, name: c.title, category: c.category, surface: 'desktop', status, observation, evidence });
 }
 
-const passed = cases.filter((c) => c.status === 'pass').length;
-const failed = cases.filter((c) => c.status === 'fail').length;
-const blocked = cases.filter((c) => c.status === 'blocked').length;
-const verdict = failed ? 'fail' : blocked ? 'partial' : 'pass';
+const passed = cases.filter((x) => x.status === 'pass').length;
+const failed = cases.filter((x) => x.status === 'fail').length;
+const blocked = cases.filter((x) => x.status === 'blocked').length;
 const result = {
-  title: 'Pixel Pet desktop app: egg choice, LobeHub agent creation, living-pet behaviour',
+  title: 'Pixel Pet 桌宠：选蛋、LobeHub agent 创建、大肥鱼、紧凑悬停界面与活宠物行为',
   scenario: 'coding',
   surface: 'desktop',
   entry: 'xvfb-run -a node e2e/run.js all',
   createdAt: new Date().toISOString(),
   plan,
   cases,
-  summary: { total: cases.length, passed, failed, blocked, verdict, conclusion: `${passed} of ${cases.length} checks passed, ${failed} failed, ${blocked} blocked.` + (blocked ? ' The blocked checks need a live LobeHub agent run, and lh agent run stopped completing during this round; they are not claimed.' : '') },
+  summary: { total: cases.length, passed, failed, blocked, verdict: failed ? 'fail' : blocked ? 'partial' : 'pass', conclusion: `共 ${cases.length} 项检查：${passed} 项通过，${failed} 项未通过，${blocked} 项未执行。` },
 };
 fs.writeFileSync(path.join(dir, 'result.json'), JSON.stringify(result, null, 2));
 fs.writeFileSync(path.join(dir, 'proposal.md'), fs.readFileSync(path.join(__dirname, 'acceptance-proposal.md'), 'utf8'));
