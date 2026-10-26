@@ -10,7 +10,8 @@
     "test": "node --test \"test/*.test.js\"",
     "e2e": "node e2e/run.js",
     "icon": "node scripts/make-icon.js",
-    "dist:mac": "electron-builder --mac --universal --publish never"
+    "dist:mac": "electron-builder --mac --universal --publish never",
+    "dist:win": "electron-builder --win --x64 --publish never"
   },
   "devDependencies": {
     "electron": "^45.0.0",
@@ -56,6 +57,31 @@
     },
     "dmg": {
       "title": "Pixel Pet ${version}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "PixelPet-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "PixelPet-${version}-win-${arch}-setup.${ext}"
     }
   },
   "bugs": {

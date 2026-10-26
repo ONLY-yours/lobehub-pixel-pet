@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const { findLh, withToolPath } = require('./lh-path');
+const { findLh, withToolPath, spawnTarget } = require('./lh-path');
 
 // Variables that make `lh` attach its output to someone else's run. They are
 // only ever set when we are launched from inside an agent run (dev/CI).
@@ -38,7 +38,8 @@ function runLh(bin, args, { timeoutMs = 120000, env, onStdout, onStderr, signal 
   return new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawn(bin, args, { env: env || cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+      const target = spawnTarget(bin); // on Windows: node-style launch of lh's JS entry, never through a shell
+      child = spawn(target.command, [...target.prefix, ...args], { env: { ...(env || cleanEnv()), ...target.env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     } catch (e) {
       return reject(new LhError(`Cannot start ${bin}: ${e.message}`));
     }
