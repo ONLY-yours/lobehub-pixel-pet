@@ -28,7 +28,7 @@ async function step(scenario, name, fn, page) {
     rec.note = (await fn()) || '';
   } catch (e) {
     rec.status = 'fail';
-    rec.note = String(e.message).split('\n')[0];
+    rec.note = String(e.message).split('\n').filter(Boolean).slice(0, 4).join(' ').slice(0, 300);
   }
   rec.ms = Date.now() - t0;
   const pg = typeof page === 'function' ? page() : page;
@@ -274,6 +274,22 @@ async function busy() {
       assert.ok(fs.existsSync(path.join(fakeDir, 'daemon-started')));
     });
 
+    await step(S, 'with the chat box open, moving the pointer away hides everything; the draft returns on the next hover', async () => {
+      await clickAct(page, 'chat'); // opens the chat box, pointer inside
+      await page.fill('#chat-input', '草稿还在');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'chat-input');
+      await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 5000 });
+      assert.equal(await page.evaluate(() => document.body.classList.contains('hover')), false);
+      assert.notEqual(await page.evaluate(() => document.activeElement.id), 'chat-input', 'the hidden box must not keep keyboard focus');
+      await page.screenshot({ path: path.join(OUT, 'away-hidden.png') });
+      await hover(page);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '1', null, { timeout: 5000 });
+      assert.equal(await page.inputValue('#chat-input'), '草稿还在');
+      await page.fill('#chat-input', '');
+      await clickAct(page, 'chat'); // close it again for the next steps
+    }, () => page);
+
     await step(S, 'while the pet works the controls stay hidden even under the pointer, and actions are refused', async () => {
       await clickAct(page, 'chat');
       await page.fill('#chat-input', '帮我看看下载文件夹里有什么');
@@ -301,6 +317,26 @@ async function busy() {
       await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
       await page.waitForTimeout(500);
       await page.keyboard.press('Escape');
+      await idle();
+      assert.match(await page.textContent('#bubble'), /不想了/);
+    }, () => page);
+
+    await step(S, 'hovering while the pet works shows only a Stop button, and clicking it interrupts the task', async () => {
+      await hover(page);
+      await page.fill('#chat-input', '又一个很大的活');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await page.mouse.move(110, 150);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('stop-btn')).display !== 'none', null, { timeout: 5000 });
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 5000 });
+      assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('toolbar')).visibility), 'hidden');
+      // pointer leaves: the button goes away with it
+      await page.evaluate(() => document.documentElement.dispatchEvent(new MouseEvent('mouseleave')));
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('stop-btn')).display === 'none', null, { timeout: 5000 });
+      await page.mouse.move(112, 152);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('stop-btn')).display !== 'none', null, { timeout: 5000 });
+      await page.screenshot({ path: path.join(OUT, 'stop-visible.png') });
+      await page.click('#stop-btn');
       await idle();
       assert.match(await page.textContent('#bubble'), /不想了/);
     }, () => page);
@@ -424,6 +460,36 @@ async function daemonlaunch() {
       await new Promise((r) => setTimeout(r, 6000)); // warm-up runs ~1.5s after launch
       assert.equal(starts(), 2);
     });
+  } finally {
+    await app.close().catch(() => {});
+  }
+}
+
+// An lh that cannot write the device binding (old releases): the pet still reaches this computer and says how to fix it.
+async function oldlh() {
+  const S = 'oldlh';
+  const data = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-old-'));
+  const fakeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pp-oldfake-'));
+  fs.writeFileSync(path.join(fakeDir, 'loggedin'), '1');
+  fs.writeFileSync(path.join(fakeDir, 'devices.json'), JSON.stringify([{ deviceId: 'dev_OLD', hostname: '192.168.101.156', platform: process.platform, online: true, channels: [{ hostname: '192.168.101.156', connectedAt: new Date().toISOString() }] }]));
+  const { app, page } = await launch({ PIXELPET_DATA_DIR: data, LH_BIN: FAKE_LH, FAKE_LH_DIR: fakeDir, FAKE_LH_NO_AGENCY: '1' });
+  try {
+    await page.waitForSelector('.egg-card');
+    await page.locator('.egg-card').nth(1).click();
+    await page.click('#hatch-btn');
+    await page.waitForSelector('#pet-screen:not(.hidden)', { timeout: 30000 });
+    await step(S, 'an lh that cannot write the binding still works, and the pet says to upgrade lh', async () => {
+      await page.waitForFunction(() => /升级/.test(document.getElementById('bubble').textContent), null, { timeout: 8000 });
+      await hover(page);
+      await clickAct(page, 'chat');
+      await page.fill('#chat-input', '读一下桌面上有什么');
+      await page.click('#chat-send');
+      await page.waitForFunction(() => document.body.classList.contains('busy'), null, { timeout: 5000 });
+      await page.waitForFunction(() => !document.body.classList.contains('busy'), null, { timeout: 20000 });
+      const run = fs.readFileSync(path.join(fakeDir, 'runs.log'), 'utf8').trim().split('\n').map(JSON.parse).pop();
+      assert.equal(run.device, 'dev_OLD');
+      assert.deepEqual(run.tools, ['lobe-local-system']);
+    }, () => page);
   } finally {
     await app.close().catch(() => {});
   }
@@ -650,7 +716,7 @@ async function art() {
 (async () => {
   if (which === 'fresh' || which === 'all') await fresh();
   if (which === 'dafeiyu' || which === 'all') await dafeiyu();
-  if (which === 'busy' || which === 'all') { await busy(); await longreply(); await daemonlaunch(); }
+  if (which === 'busy' || which === 'all') { await busy(); await longreply(); await daemonlaunch(); await oldlh(); }
   if (which === 'live' || which === 'all') await live();
   if (which === 'art' || which === 'all') await art();
   // Scenarios can be run separately; keep earlier results for the ones not run this time.

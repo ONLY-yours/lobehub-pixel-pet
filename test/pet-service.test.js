@@ -338,3 +338,67 @@ test('dropped files with an unreachable device report the problem instead of gue
   assert.equal(r.reason, 'local-error');
   assert.match(r.message, /connect/);
 });
+
+// ---------------------------------------------------------------- old lh, device targeting, stop
+test('every run names the device when computer access is on (so a stale binding cannot misroute it)', async () => {
+  const { svc, dir } = await hatched();
+  setDevices(dir, [myDevice('dev_MAC')]);
+  await svc.setLocalAbilities(true);
+  await svc.chat('hi');
+  assert.equal(readLog(dir, 'runs.log').pop().device, 'dev_MAC');
+  await svc.setLocalAbilities(false);
+  await svc.chat('hi again');
+  assert.equal(readLog(dir, 'runs.log').pop().device, null);
+});
+
+test('an old lh that cannot write the binding still works: the device is named on each run and the user is told to upgrade', async () => {
+  const { svc, dir, lh } = await hatched();
+  lh.env.FAKE_LH_NO_AGENCY = '1';
+  setDevices(dir, [myDevice('dev_MAC')]);
+  const r = await svc.setLocalAbilities(true);
+  assert.equal(r.ok, true);
+  assert.match(svc.localWarning, /升级/);
+  assert.equal(readLog(dir, 'edits.log').filter((e) => e.agencyConfig).length, 0);
+  await svc.chat('读一下桌面');
+  const run = readLog(dir, 'runs.log').pop();
+  assert.equal(run.device, 'dev_MAC');
+  assert.deepEqual(run.tools, ['lobe-local-system']);
+});
+
+test('an lh that rejects --device does not cost the turn: the run is retried without it', async () => {
+  const { svc, dir, lh } = await hatched();
+  setDevices(dir, [myDevice('dev_MAC')]);
+  await svc.setLocalAbilities(true);
+  lh.env.FAKE_LH_NO_DEVICE_FLAG = '1';
+  const r = await svc.chat('hello');
+  assert.equal(r.ok, true);
+  const run = readLog(dir, 'runs.log').pop();
+  assert.equal(run.device, null);
+  assert.deepEqual(run.tools, ['lobe-local-system']);
+});
+
+test('stopping while the device is being connected cancels the setting and leaves it off', async () => {
+  const { svc, lh } = await hatched();
+  lh.env.FAKE_LH_CONNECT_DELAY_MS = '8000';
+  const pending = svc.setLocalAbilities(true);
+  await new Promise((r) => setTimeout(r, 500));
+  svc.cancel();
+  const r = await pending;
+  assert.equal(r.reason, 'canceled');
+  assert.equal(svc.pet.localAbilities, false);
+  assert.equal(svc.busy, false);
+});
+
+test('stopping during the persona update means the message is never sent to the agent', async () => {
+  const { svc, dir, lh } = await hatched();
+  svc.pet.personaVersion = 1;
+  lh.env.FAKE_LH_EDIT_DELAY_MS = '8000';
+  const runsBefore = readLog(dir, 'runs.log').length;
+  const pending = svc.chat('hello');
+  await new Promise((r) => setTimeout(r, 500));
+  svc.cancel();
+  const r = await pending;
+  assert.equal(r.reason, 'canceled');
+  assert.equal(readLog(dir, 'runs.log').length, runsBefore);
+  assert.equal(svc.busy, false);
+});

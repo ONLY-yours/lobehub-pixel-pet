@@ -26,6 +26,8 @@ class PetService extends EventEmitter {
     this._localFailedAt = 0;
     this.localError = null;
     this.localWarning = null;
+    this._deviceId = null;
+    this._cancelRequested = false;
   }
 
   init() {
@@ -127,15 +129,24 @@ class PetService extends EventEmitter {
     }
     try {
       const { deviceId, via, daemon } = await ensureLocalDevice(this.lh);
+      this._deviceId = deviceId;
+      let bindWarning = null;
       if (this.pet.boundDeviceId !== deviceId) {
-        await this.lh.updateAgent({ agentId: this.pet.agentId, agencyConfig: bindConfig(deviceId) });
-        this.pet.boundDeviceId = deviceId;
+        try {
+          await this.lh.updateAgent({ agentId: this.pet.agentId, agencyConfig: bindConfig(deviceId) });
+          this.pet.boundDeviceId = deviceId;
+        } catch (e) {
+          // An old lh has no `agent edit --agency-config-file`. The agent then cannot be bound, but every run can
+          // still name the device (`--device <id>`), so local tools keep working; just tell the user to update lh.
+          if (!/unknown option/i.test(e.message)) throw e;
+          bindWarning = '你的 lh 版本较旧，没能把宠物绑定到这台电脑，已改为每次运行直接指定设备。建议升级：npm install -g @lobehub/cli@latest';
+        }
       }
       this._localOk = true;
       this._localCheckedAt = t;
       this._localFailedAt = 0;
       this.localError = null;
-      this.localWarning = daemon && daemon.error ? `lh connect 没能启动（${String(daemon.error).slice(0, 80)}），先用已在线的设备。` : null;
+      this.localWarning = bindWarning || (daemon && daemon.error ? `lh connect 没能启动（${String(daemon.error).slice(0, 80)}），先用已在线的设备。` : null);
       this.localVia = via;
     } catch (e) {
       this._localOk = false;
@@ -150,11 +161,16 @@ class PetService extends EventEmitter {
     if (!this.pet) return { ok: false, reason: 'empty' };
     if (this.busy) return { ok: false, reason: 'busy' };
     this.busy = true;
+    this._cancelRequested = false;
     this.emit('thinking', true);
     try {
       if (on) {
         this.pet.localAbilities = true;
         await this._verifyLocal({ force: true });
+        if (this._cancelRequested) {
+          this.pet.localAbilities = false;
+          return { ok: false, reason: 'canceled' };
+        }
         if (!this._localOk) {
           this.pet.localAbilities = false;
           return { ok: false, reason: 'error', message: this.localError };
@@ -188,7 +204,18 @@ class PetService extends EventEmitter {
 
   // Stop whatever the agent is doing right now.
   cancel() {
-    if (this.busy) this.lh.cancel();
+    if (!this.busy) return;
+    this._cancelRequested = true;
+    this.lh.cancel();
+  }
+
+  // Steps that swallow errors (device lookup, persona update) must not let a cancelled turn carry on.
+  _throwIfCanceled() {
+    if (this._cancelRequested) throw Object.assign(new Error('Canceled'), { code: 'ECANCELED' });
+  }
+
+  _device() {
+    return this.pet.localAbilities && this._localOk ? this._deviceId : null;
   }
 
   // Ask the agent to say something for a system-triggered event.
@@ -200,20 +227,27 @@ class PetService extends EventEmitter {
       return;
     }
     this.busy = true;
+    this._cancelRequested = false;
     this.emit('thinking', true);
     try {
       this.budget.spend(t);
       await this._ensureReady();
+      this._throwIfCanceled();
       const res = await this.lh.run({
         agentId: this.pet.agentId,
         topicId: this.pet.topicId,
         prompt: persona.buildEventPrompt(kind, this.pet, t),
         tools: this._tools(),
+        device: this._device(),
       });
       if (res.topicId) this.pet.topicId = res.topicId;
       if (kind === 'greet_morning' || kind === 'greet_evening') this.pet.lastGreetDay = new Date(t).toDateString();
       this._say(res.text, 'llm', kind);
     } catch (e) {
+      if (e.code === 'ECANCELED') {
+        this._save();
+        return;
+      }
       if (kind === 'greet_morning' || kind === 'greet_evening') this.pet.lastGreetDay = new Date(t).toDateString();
       this._say(fallbackLine(sp, kind, this.rnd), 'fallback', kind, e.message);
       this.emit('error', e);
@@ -234,10 +268,12 @@ class PetService extends EventEmitter {
     if (paths.length && !this.pet.localAbilities) return { ok: false, reason: 'local-off' };
     const t = this.now();
     this.busy = true;
+    this._cancelRequested = false;
     this.emit('thinking', true);
     try {
       state.touch(this.pet, t);
       await this._ensureReady();
+      this._throwIfCanceled();
       if (paths.length && !this._localOk) return { ok: false, reason: 'local-error', message: this.localError };
       const local = this._tools().length > 0;
       let body;
@@ -253,7 +289,7 @@ class PetService extends EventEmitter {
         body = [clean, paths.length ? persona.buildFilesBlock(paths, !!clean) : ''].filter(Boolean).join('\n');
       }
       const prompt = persona.buildChatPrompt(body, this.pet, t, { local });
-      const res = await this.lh.run({ agentId: this.pet.agentId, topicId: this.pet.topicId, prompt, tools: this._tools() });
+      const res = await this.lh.run({ agentId: this.pet.agentId, topicId: this.pet.topicId, prompt, tools: this._tools(), device: this._device() });
       if (res.topicId) this.pet.topicId = res.topicId;
       const { evolved } = state.chatted(this.pet, this.now());
       this._say(res.text, 'llm', 'chat');

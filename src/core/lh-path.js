@@ -73,9 +73,60 @@ function loginShellLookup(env = process.env) {
   }
 }
 
+// ---- Windows --------------------------------------------------------------------------------
+// There `lh` is an npm shim (`lh.cmd`). Node refuses to spawn .cmd files without a shell, and a shell
+// would put the pet's (user-influenced) prompt text through cmd.exe quoting, which is a command
+// injection risk. So we read the shim to find the JS entry it launches and run that directly with the
+// app's own Electron binary acting as node (ELECTRON_RUN_AS_NODE), no shell involved.
+const winPath = path.win32;
+
+function windowsCandidateDirs({ env, io }) {
+  const dirs = [];
+  if (env.APPDATA) dirs.push(winPath.join(env.APPDATA, 'npm'));
+  if (env.LOCALAPPDATA) dirs.push(winPath.join(env.LOCALAPPDATA, 'Volta', 'bin'), winPath.join(env.LOCALAPPDATA, 'pnpm'));
+  if (env.USERPROFILE) dirs.push(winPath.join(env.USERPROFILE, '.bun', 'bin'));
+  if (env.NVM_SYMLINK) dirs.push(env.NVM_SYMLINK);
+  dirs.push(winPath.join(env.ProgramFiles || 'C:\\Program Files', 'nodejs'));
+  return dirs.filter((d) => io.isDir(d));
+}
+
+// npm's cmd shim ends with:  "%_prog%"  "%dp0%\node_modules\@lobehub\cli\dist\index.js" %*
+function resolveWindowsEntry(cmdPath, { read = (p) => fs.readFileSync(p, 'utf8'), io = realFs } = {}) {
+  let text;
+  try {
+    text = read(cmdPath);
+  } catch {
+    return null;
+  }
+  const m = text.match(/"%dp0%\\([^"\r\n]+?\.(?:c|m)?js)"/i);
+  if (!m) return null;
+  const entry = winPath.join(winPath.dirname(cmdPath), m[1]);
+  return io.exists(entry) ? entry : null;
+}
+
+// How to start the `lh` we found: { command, prefix (args placed before ours), env (extra variables) }.
+function spawnTarget(bin, { platform = process.platform, execPath = process.execPath, read, io = realFs } = {}) {
+  if (platform === 'win32' && /\.(cmd|bat)$/i.test(bin)) {
+    const entry = resolveWindowsEntry(bin, { read, io });
+    if (!entry) throw new Error(`Cannot run ${bin} without a shell and could not find the script it launches. Reinstall the CLI: npm install -g @lobehub/cli`);
+    return { command: execPath, prefix: [entry], env: { ELECTRON_RUN_AS_NODE: '1' } };
+  }
+  return { command: bin, prefix: [], env: {} };
+}
+
 // Returns an absolute path to `lh`, or null. `lookup` is the login-shell fallback (injectable for tests).
-function findLh({ env = process.env, home = os.homedir(), io = realFs, lookup = loginShellLookup } = {}) {
+function findLh({ env = process.env, home = os.homedir(), io = realFs, lookup = loginShellLookup, platform = process.platform } = {}) {
   if (env.LH_BIN) return env.LH_BIN;
+  if (platform === 'win32') {
+    const dirs = [...(env.PATH || env.Path || '').split(';').filter(Boolean), ...windowsCandidateDirs({ env, io })];
+    for (const d of dirs) {
+      for (const name of ['lh.cmd', 'lh.exe']) {
+        const p = winPath.join(d, name);
+        if (io.exists(p)) return p;
+      }
+    }
+    return null;
+  }
   const dirs = [...(env.PATH || '').split(path.delimiter).filter(Boolean), ...candidateDirs({ home, io })];
   for (const d of dirs) {
     const p = path.join(d, 'lh');
@@ -85,7 +136,8 @@ function findLh({ env = process.env, home = os.homedir(), io = realFs, lookup = 
 }
 
 // PATH that lets `lh` find `node`: its own directory first (nvm/fnm/volta keep both together).
-function withToolPath(env, lhPath, { home = os.homedir(), io = realFs } = {}) {
+function withToolPath(env, lhPath, { home = os.homedir(), io = realFs, platform = process.platform } = {}) {
+  if (platform === 'win32') return env; // Windows GUI apps inherit the user PATH; lh is started through its JS entry anyway
   const dirs = [];
   if (lhPath && path.isAbsolute(lhPath)) {
     const real = (() => { try { return fs.realpathSync(lhPath); } catch { return lhPath; } })();
@@ -95,4 +147,4 @@ function withToolPath(env, lhPath, { home = os.homedir(), io = realFs } = {}) {
   return { ...env, PATH: [...new Set(dirs)].join(path.delimiter) };
 }
 
-module.exports = { findLh, withToolPath, candidateDirs, realFs };
+module.exports = { findLh, withToolPath, candidateDirs, spawnTarget, resolveWindowsEntry, windowsCandidateDirs, realFs };
