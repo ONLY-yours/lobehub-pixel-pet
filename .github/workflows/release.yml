@@ -56,6 +56,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cat > notes.md <<'NOTES'
+          ## 安装（macOS，Intel 与 Apple 芯片通用）
+
+          1. 下载 `.dmg`（或 `.zip`），把 **Pixel Pet** 拖进“应用程序”。
+          2. 应用没有苹果开发者签名，首次打开会被拦截：右键点应用选“打开”，或执行 `xattr -cr "/Applications/Pixel Pet.app"`。
+          3. 先装 LobeHub CLI：`npm install -g @lobehub/cli`，宠物的大脑通过它运行。
+
+          ## 素材说明
+
+          “大肥鱼”的动画来自开源项目 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)：素材仅限非商业使用，形象为社区二创（非 DeepSeek 官方），授权 CC BY-NC-SA 4.0。详见 README 的 Credits。请勿商用。
+
+          ---
+          NOTES
           gh release create "${{ github.ref_name }}" dist/*.dmg dist/*.zip \
             --title "Pixel Pet ${{ github.ref_name }}" \
+            --notes-file notes.md \
             --generate-notes
