@@ -26,6 +26,9 @@ if (args[0] === 'whoami') {
 } else if (args[0] === 'agent' && args[1] === 'delete') {
   console.log('✓ Deleted agent');
 } else if (args[0] === 'agent' && args[1] === 'run') {
+  if (process.env.FAKE_LH_FAIL_RUN === 'timeout') process.exit(3);
+  if (process.env.FAKE_LH_FAIL_RUN === 'auth') { console.error('Not logged in. Run `lh login` first.'); process.exit(1); }
+  if (process.env.FAKE_LH_FAIL_RUN === 'empty') { console.log('[]'); process.exit(0); }
   if (process.env.FAKE_LH_FAIL_RUN) { console.error('boom'); process.exit(1); }
   const prompt = args[args.indexOf('-p') + 1];
   const topic = args.includes('-t') ? args[args.indexOf('-t') + 1] : 'tpc_FAKE1';

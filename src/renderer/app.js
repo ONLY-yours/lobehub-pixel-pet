@@ -167,6 +167,15 @@ function setThinking(on) {
   }
 }
 
+// Tell the owner what actually went wrong instead of blaming "the network" for everything.
+function errorLine(r) {
+  if (r.code === 'ETIMEDOUT') return '（我想了好久也没想出来……LobeHub 现在好像很慢，晚点再说一次？）';
+  if (r.code === 'EAUTH') return '（LobeHub 登录好像过期了，需要重新 lh login）';
+  if (r.code === 'ENOENT') return '（找不到 lh 命令，请先 npm install -g @lobehub/cli）';
+  if (r.code === 'ENOREPLY') return '（我走神了，没想出要说什么……再说一次？）';
+  return `（出错了：${String(r.message || '未知错误').slice(0, 70)}）`;
+}
+
 async function doAct(kind, food) {
   const r = await window.pet.act(kind, food);
   if (kind === 'feed' && r.ok) {
@@ -206,6 +215,7 @@ function bindPetUi() {
     if (!m) return;
     $('main-menu').classList.add('hidden');
     if (m === 'quit') window.pet.quit();
+    if (m === 'log') window.pet.openLog();
     if (m === 'release' && confirm('放生它，并在 LobeHub 里删除对应的 agent（含聊天记录）？')) await release(true);
     if (m === 'forget' && confirm('只重置本地进度，LobeHub 里的 agent 会保留。继续？')) await release(false);
   });
@@ -217,7 +227,7 @@ function bindPetUi() {
     $('chat-send').disabled = true;
     const r = await window.pet.chat(text);
     $('chat-send').disabled = false;
-    if (!r.ok && r.reason === 'error') say('（网络好像不太好……再说一次？）', 'error');
+    if (!r.ok && r.reason === 'error') say(errorLine(r), 'error', 'error', r.message);
     if (!r.ok && r.reason === 'busy') say('等等，我还在想上一句……', 'busy');
   };
   $('chat-send').addEventListener('click', send);

@@ -128,7 +128,8 @@ class PetService extends EventEmitter {
       return { ok: true, text: res.text, cost: res.cost };
     } catch (e) {
       this.emit('error', e);
-      return { ok: false, reason: 'error', message: e.message };
+      this._save(); // touch() above may have woken the pet; keep the sprite in sync
+      return { ok: false, reason: 'error', code: e.code || null, message: e.message };
     } finally {
       this.busy = false;
       this.emit('thinking', false);

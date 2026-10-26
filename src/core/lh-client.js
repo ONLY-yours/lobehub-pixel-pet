@@ -144,16 +144,20 @@ class LhClient {
 
   // One conversational turn. Reusing `topicId` keeps the pet's long-term
   // history inside LobeHub. Returns { text, topicId, cost }.
-  async run({ agentId, prompt, topicId, timeoutMs = 90000 }) {
+  async run({ agentId, prompt, topicId, timeoutMs = 120000 }) {
     const args = ['agent', 'run', '-a', agentId, '-p', prompt, '--json', '--timeout', String(Math.ceil(timeoutMs / 1000))];
     if (topicId) args.push('-t', topicId);
     const r = await this._run(args, { timeoutMs: timeoutMs + 5000 });
     const parsed = parseRunEvents(r.stdout);
-    if (r.code !== 0 && !parsed.text) {
-      throw new LhError(`Agent run failed (exit ${r.code}): ${(r.stderr || r.stdout).trim().slice(0, 300)}`, { code: r.code, stderr: r.stderr });
+    if (parsed.text) return parsed;
+    // `lh agent run --timeout` exits with 3 when it stopped waiting; the run keeps going server-side.
+    if (r.code === 3) throw new LhError(`Agent run did not finish within ${Math.ceil(timeoutMs / 1000)}s`, { code: 'ETIMEDOUT', stderr: r.stderr });
+    const detail = (r.stderr || r.stdout).trim().slice(0, 300);
+    if (/not logged in|unauthori[sz]ed|\b401\b|expired|credential|lh login/i.test(detail)) {
+      throw new LhError(`LobeHub login is missing or expired: ${detail}`, { code: 'EAUTH', stderr: r.stderr });
     }
-    if (!parsed.text) throw new LhError('Agent produced no reply', { code: r.code, stderr: r.stderr });
-    return parsed;
+    if (r.code !== 0) throw new LhError(`Agent run failed (exit ${r.code}): ${detail}`, { code: r.code, stderr: r.stderr });
+    throw new LhError('Agent produced no reply', { code: 'ENOREPLY', stderr: r.stderr });
   }
 }
 

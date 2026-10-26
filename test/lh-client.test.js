@@ -85,3 +85,11 @@ test('login reports when the CLI could not open a browser so the app can open it
   assert.equal(prompts[0].browserFailed, false);
   assert.equal(prompts.at(-1).browserFailed, true);
 });
+
+test('run failures are classified so the UI can say what went wrong', async () => {
+  for (const [mode, code, re] of [['timeout', 'ETIMEDOUT', /did not finish/], ['auth', 'EAUTH', /login/i], ['empty', 'ENOREPLY', /no reply/], ['x', 1, /exit 1/]]) {
+    const { lh } = setup();
+    lh.env.FAKE_LH_FAIL_RUN = mode;
+    await assert.rejects(() => lh.run({ agentId: 'agt_1', prompt: 'x' }), (e) => e.code === code && re.test(e.message), mode);
+  }
+});
