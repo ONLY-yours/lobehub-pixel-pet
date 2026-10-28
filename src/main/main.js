@@ -4,7 +4,9 @@ const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { LhClient } = require('../core/lh-client');
+const { LhClient, cleanEnv } = require('../core/lh-client');
+const { withToolPath } = require('../core/lh-path');
+const { ResponsesClient } = require('../core/responses-client');
 const { Store } = require('../core/store');
 const { PetService } = require('./pet-service');
 const { SPECIES, SPECIES_IDS } = require('../core/species');
@@ -170,7 +172,9 @@ function wire() {
 
 app.whenReady().then(() => {
   const store = new Store(app.getPath('userData'));
-  service = new PetService({ lh: new LhClient(), store });
+  const lh = new LhClient();
+  lh.env = withToolPath({ ...cleanEnv(), LOBEHUB_JWT: '' }, lh.bin);
+  service = new PetService({ lh, responses: new ResponsesClient({ lh }), store });
   wire();
   createWindow();
   if (!TEST_MODE) setInterval(() => service.heartbeat().catch((e) => console.error(e)), HEARTBEAT_MS);

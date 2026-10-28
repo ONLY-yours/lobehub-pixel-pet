@@ -12,9 +12,10 @@ const LOCAL_RETRY_MS = 5 * 60 * 1000; // after a failure, do not hammer `lh` on 
 
 // Owns the pet's lifecycle. Electron-free so it can be tested with a fake `lh`.
 class PetService extends EventEmitter {
-  constructor({ lh, store, now = () => Date.now(), rnd = Math.random, budget = new LlmBudget() }) {
+  constructor({ lh, responses = null, store, now = () => Date.now(), rnd = Math.random, budget = new LlmBudget() }) {
     super();
     this.lh = lh;
+    this.responses = responses;
     this.store = store;
     this.now = now;
     this.rnd = rnd;
@@ -122,6 +123,13 @@ class PetService extends EventEmitter {
 
   // Find this computer's online device (starting `lh connect --daemon` if none) and bind the agent to it.
   async _verifyLocal({ force = false } = {}) {
+    if (this.responses) {
+      this._localOk = true;
+      this.localError = null;
+      this.localWarning = null;
+      this.localVia = 'local';
+      return;
+    }
     const t = this.now();
     if (!force) {
       if (this._localOk && t - this._localCheckedAt < LOCAL_RECHECK_MS) return;
@@ -177,7 +185,7 @@ class PetService extends EventEmitter {
         }
         return { ok: true, via: this.localVia };
       }
-      await this.lh.updateAgent({ agentId: this.pet.agentId, agencyConfig: unbindConfig() });
+      if (!this.responses) await this.lh.updateAgent({ agentId: this.pet.agentId, agencyConfig: unbindConfig() });
       this.pet.localAbilities = false;
       this.pet.boundDeviceId = null;
       this._localOk = false;
@@ -206,7 +214,7 @@ class PetService extends EventEmitter {
   cancel() {
     if (!this.busy) return;
     this._cancelRequested = true;
-    this.lh.cancel();
+    (this.responses || this.lh).cancel();
   }
 
   // Steps that swallow errors (device lookup, persona update) must not let a cancelled turn carry on.
@@ -233,14 +241,16 @@ class PetService extends EventEmitter {
       this.budget.spend(t);
       await this._ensureReady();
       this._throwIfCanceled();
-      const res = await this.lh.run({
+      const res = await (this.responses || this.lh).run({
         agentId: this.pet.agentId,
         topicId: this.pet.topicId,
         prompt: persona.buildEventPrompt(kind, this.pet, t),
         tools: this._tools(),
         device: this._device(),
+        responseId: this.pet.responseId,
       });
       if (res.topicId) this.pet.topicId = res.topicId;
+      if (res.responseId) this.pet.responseId = res.responseId;
       if (kind === 'greet_morning' || kind === 'greet_evening') this.pet.lastGreetDay = new Date(t).toDateString();
       this._say(res.text, 'llm', kind);
     } catch (e) {
@@ -277,7 +287,7 @@ class PetService extends EventEmitter {
       if (paths.length && !this._localOk) return { ok: false, reason: 'local-error', message: this.localError };
       const local = this._tools().length > 0;
       let body;
-      if (images.length) {
+      if (images.length && !this.responses) {
         const fileIds = [];
         for (const img of images) fileIds.push(await this.lh.uploadFile(img));
         if (!this.pet.topicId) this.pet.topicId = await this.lh.createTopic(this.pet.agentId, this.pet.name);
@@ -289,8 +299,9 @@ class PetService extends EventEmitter {
         body = [clean, paths.length ? persona.buildFilesBlock(paths, !!clean) : ''].filter(Boolean).join('\n');
       }
       const prompt = persona.buildChatPrompt(body, this.pet, t, { local });
-      const res = await this.lh.run({ agentId: this.pet.agentId, topicId: this.pet.topicId, prompt, tools: this._tools(), device: this._device() });
+      const res = await (this.responses || this.lh).run({ agentId: this.pet.agentId, topicId: this.pet.topicId, responseId: this.pet.responseId, prompt, tools: this._tools(), device: this._device(), images });
       if (res.topicId) this.pet.topicId = res.topicId;
+      if (res.responseId) this.pet.responseId = res.responseId;
       const { evolved } = state.chatted(this.pet, this.now());
       this._say(res.text, 'llm', 'chat');
       if (evolved) setImmediate(() => this._onEvolved());
