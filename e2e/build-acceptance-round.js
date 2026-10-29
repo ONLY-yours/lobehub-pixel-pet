@@ -175,6 +175,10 @@ const CHECKS = [
     method: '打开聊天框并输入草稿，然后让鼠标离开窗口，再移回来。', expected: '移开后状态条、按钮、聊天框全部隐藏，输入框不再占着键盘焦点；移回来草稿还在。',
     ok: '聊天框打开着、输入框有焦点时，鼠标一移开，所有控件立刻隐藏，输入框失去键盘焦点；鼠标移回后草稿原样还在。移开一步用的是合成的鼠标离开事件，不是真实的指针移出。',
     shots: [['busy:with the chat box open, moving the pointer away hides everything', '鼠标移回后：草稿还在，控件重新出现。']], extra: [['away-hidden.png', '聊天框打开时鼠标移开：只剩宠物，没有任何控件。']] },
+  { id: 'ime-safe', category: '输入法', title: '用输入法输入中文时，聊天框不会因为候选窗口而消失', steps: ['busy:an IME composition survives the blur'],
+    method: '在聊天框里开始一次输入法拼写，同时触发候选窗口会引起的“鼠标移出”和“窗口失焦”，等待超过 2 秒；再确认词条，鼠标仍在窗外。', expected: '拼写期间聊天框一直显示、保持键盘焦点；确认后停顿片刻才收起，草稿保留；鼠标回来后草稿还在。',
+    ok: '拼写期间触发了鼠标移出和窗口失焦，聊天框依然显示并保持焦点；确认词条后它再停留片刻、随后因鼠标在窗外而收起，草稿“你好”保留，鼠标回来后还在。输入法事件是合成的，不是真实的 Windows 输入法。',
+    shots: [['busy:an IME composition survives the blur', '输入法拼写结束并重新悬停后的画面。']], extra: [['ime-composing.png', '输入法拼写期间（已触发鼠标移出和窗口失焦）：聊天框仍然显示。']] },
 ];
 
 const plan = [];

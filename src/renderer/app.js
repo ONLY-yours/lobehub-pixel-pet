@@ -399,26 +399,55 @@ function bindPetUi() {
 // The controls exist only while the pointer is over the pet window (and it is not working). Nothing
 // keeps them open: moving away hides everything, even an open chat box. The draft text and attached
 // files are kept and come back with the next hover.
+//
+// One exception, for input methods: while the user is typing in the chat box (a Chinese/Japanese/Korean
+// IME composition, or a keystroke in the last 1.5 s) the box stays, whatever the pointer or window focus
+// is doing. A Windows IME pops up its own candidate window, which fires blur/mouseleave and may sit
+// outside our window; hiding the box then (it loses focus when hidden) kills the composition.
+const TYPING_GRACE_MS = 1500;
+let composing = false;
+let typingUntil = 0;
+let typingTimer = null;
+
+function typingActive() {
+  return document.activeElement === $('chat-input') && (composing || performance.now() < typingUntil);
+}
+function noteTyping() {
+  typingUntil = performance.now() + TYPING_GRACE_MS;
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(syncHover, TYPING_GRACE_MS + 50); // re-check once typing has stopped
+  syncHover();
+}
+
 function syncHover() {
+  const keep = typingActive();
   document.body.classList.toggle('over', pointerInside); // pointer over the window (used by the stop button)
-  document.body.classList.toggle('hover', !thinking && pointerInside);
-  if (!pointerInside) {
+  document.body.classList.toggle('hover', !thinking && (pointerInside || keep));
+  if (!pointerInside && !keep && !thinking) {
     if (document.activeElement === $('chat-input')) $('chat-input').blur(); // keystrokes must not go into a hidden box
     $('food-menu').classList.add('hidden');
     $('main-menu').classList.add('hidden');
   }
 }
 function bindHover() {
-  const root = document.documentElement;
   const set = (inside) => { if (pointerInside !== inside) { pointerInside = inside; syncHover(); } };
-  root.addEventListener('mouseenter', () => set(true));
-  root.addEventListener('mouseleave', () => set(false));
-  window.addEventListener('mousemove', () => set(true));
-  window.addEventListener('blur', () => set(false));
-  // dragging a file over the window counts as being on the pet (no mouse events fire during an OS drag)
+  // Real app: the main process reports the OS cursor position (immune to IME windows). Tests: DOM events.
+  window.pet.onPointer(set);
+  if (info.testMode) {
+    const root = document.documentElement;
+    root.addEventListener('mouseenter', () => set(true));
+    root.addEventListener('mouseleave', () => set(false));
+    window.addEventListener('mousemove', () => set(true));
+  }
+  // dragging a file over the window counts as being on the pet
   document.addEventListener('dragenter', () => set(true));
   document.addEventListener('dragover', () => set(true));
-  document.addEventListener('dragleave', (e) => { if (e.relatedTarget === null) set(false); });
+  const input = $('chat-input');
+  input.addEventListener('compositionstart', () => { composing = true; noteTyping(); });
+  input.addEventListener('compositionupdate', noteTyping);
+  input.addEventListener('compositionend', () => { composing = false; noteTyping(); });
+  input.addEventListener('input', noteTyping);
+  input.addEventListener('keydown', noteTyping);
 }
 
 // ---------- pictures and files to send ----------
