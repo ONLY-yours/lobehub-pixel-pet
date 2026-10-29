@@ -290,6 +290,37 @@ async function busy() {
       await clickAct(page, 'chat'); // close it again for the next steps
     }, () => page);
 
+    await step(S, 'an IME composition survives the blur and mouse-leave a Windows candidate window causes, then the box hides once typing stops', async () => {
+      await clickAct(page, 'chat');
+      await page.focus('#chat-input');
+      await page.evaluate(() => {
+        const i = document.getElementById('chat-input');
+        i.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        i.dispatchEvent(new CompositionEvent('compositionupdate', { data: 'ni', bubbles: true }));
+        document.documentElement.dispatchEvent(new MouseEvent('mouseleave')); // the candidate window is under the pointer
+        window.dispatchEvent(new Event('blur')); // and the window reports losing focus
+      });
+      await page.waitForTimeout(2600); // longer than the typing grace: only the composition keeps the box open
+      assert.equal(await hudOpacity(page), '1');
+      assert.equal(await page.evaluate(() => document.activeElement.id), 'chat-input', 'the composing box must keep focus');
+      await page.screenshot({ path: path.join(OUT, 'ime-composing.png') });
+      // commit the word with the pointer still away: the box stays a moment, then hides and keeps the draft
+      await page.evaluate(() => {
+        const i = document.getElementById('chat-input');
+        i.value = '你好';
+        i.dispatchEvent(new CompositionEvent('compositionend', { data: '你好', bubbles: true }));
+        i.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      await page.waitForTimeout(500);
+      assert.equal(await hudOpacity(page), '1');
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '0', null, { timeout: 6000 });
+      assert.equal(await page.inputValue('#chat-input'), '你好');
+      await hover(page);
+      await page.waitForFunction(() => getComputedStyle(document.getElementById('hud')).opacity === '1', null, { timeout: 5000 });
+      await page.fill('#chat-input', '');
+      await clickAct(page, 'chat');
+    }, () => page);
+
     await step(S, 'while the pet works the controls stay hidden even under the pointer, and actions are refused', async () => {
       await clickAct(page, 'chat');
       await page.fill('#chat-input', '帮我看看下载文件夹里有什么');

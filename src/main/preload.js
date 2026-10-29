@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('pet', {
   openLog: () => ipcRenderer.send('open-log'),
   debugSet: (patch) => ipcRenderer.invoke('debug-set', patch),
   debugHeartbeat: () => ipcRenderer.invoke('debug-heartbeat'),
+  onPointer: on('pointer'),
   onUpdate: on('update'),
   onSay: on('say'),
   onThinking: on('thinking'),
