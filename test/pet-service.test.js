@@ -20,6 +20,23 @@ function setup(now = new Date('2026-01-05T14:00:00').getTime()) {
   return { dir, clock, lh, svc, said };
 }
 
+test('Responses transport uses local tools without connecting a device and persists the response chain', async () => {
+  const { svc, dir } = setup();
+  fs.writeFileSync(path.join(dir, 'loggedin'), '1');
+  const calls = [];
+  svc.responses = { cancel() {}, async run(args) { calls.push(args); return { text: 'hello', responseId: `response-${calls.length}` }; } };
+  await svc.hatch({ speciesId: 'embit', localAbilities: true });
+  await svc.chat('hi');
+  assert.equal(calls[1].responseId, 'response-1');
+  assert.ok(calls[1].tools.length);
+  assert.equal(svc.store.load().responseId, 'response-2');
+  const cliCalls = fs.readFileSync(path.join(dir, 'calls.log'), 'utf8');
+  assert.doesNotMatch(cliCalls, /"connect"|"device"|"run"/);
+  await svc.setLocalAbilities(false);
+  await svc.chat('hi again');
+  assert.deepEqual(calls[2].tools, []);
+});
+
 test('first hatch with no login runs the login flow, creates the agent, and greets', async () => {
   const { svc, said, dir } = setup();
   const steps = [];

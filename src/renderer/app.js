@@ -22,6 +22,7 @@ let hatchCracks = 0;
 let revealSpecies = null;
 let bubbleTimer = null;
 let bubbleHold = false; // pointer over the bubble: keep it open so a long reply can be scrolled and read
+let chatBubbleUntil = 0;
 let thinkTimer = null;
 let attachments = []; // [{ kind:'image', dataUrl, name } | { kind:'path', path, name }] waiting for the next message
 let oneShot = null; // { key, until } temporary video clip (pat, play, evolve, hatch)
@@ -214,6 +215,8 @@ function refreshHud() {
 
 function say(text, kind, source, reason) {
   const b = $('bubble');
+  if (kind !== 'chat' && Date.now() < chatBubbleUntil) return;
+  chatBubbleUntil = kind === 'chat' ? Date.now() + 180000 : 0;
   clearTimeout(bubbleTimer);
   b.classList.remove('thinking');
   b.classList.remove('hidden');
@@ -226,7 +229,7 @@ function say(text, kind, source, reason) {
   const hideLater = (ms) => {
     bubbleTimer = setTimeout(() => (bubbleHold ? hideLater(3000) : b.classList.add('hidden')), ms);
   };
-  hideLater(Math.min(45000, 6000 + text.length * 150));
+  hideLater(kind === 'chat' ? 180000 : Math.min(45000, 6000 + text.length * 150));
 }
 
 function setThinking(on) {
@@ -239,13 +242,15 @@ function setThinking(on) {
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
     $('food-menu').classList.add('hidden');
     $('main-menu').classList.add('hidden');
-    clearTimeout(bubbleTimer);
-    b.classList.remove('hidden');
-    b.classList.add('thinking');
-    let n = 0;
-    const tick = () => { b.textContent = `思考中${'.'.repeat((n++ % 3) + 1)}`; };
-    tick();
-    thinkTimer = setInterval(tick, 450);
+    if (Date.now() >= chatBubbleUntil) {
+      clearTimeout(bubbleTimer);
+      b.classList.remove('hidden');
+      b.classList.add('thinking');
+      let n = 0;
+      const tick = () => { b.textContent = `思考中${'.'.repeat((n++ % 3) + 1)}`; };
+      tick();
+      thinkTimer = setInterval(tick, 450);
+    }
   }
   syncHover();
 }
@@ -310,7 +315,7 @@ function bindPetUi() {
       const on = !(view && view.local && view.local.enabled);
       if (on && !confirm('让宠物使用这台电脑？\n它可以读写文件、搜索内容、运行命令，能碰到你账号权限内的所有东西（不是沙盒）。')) return;
       const r = await window.pet.setLocal(on);
-      if (r.ok) say(on ? '（已连上这台电脑，要我帮你找什么？）' : '（好，我不碰你的电脑了。）', 'local', 'fallback');
+      if (r.ok) say(on ? '（本机工具已开启，要我帮你找什么？）' : '（好，我不碰你的电脑了。）', 'local', 'fallback');
       else if (r.reason === 'canceled') say('（好，先不弄了。）', 'canceled', 'fallback');
       else if (r.reason !== 'busy') say(`（没成功：${String(r.message || '未知原因').slice(0, 60)}）`, 'error', 'fallback', r.message);
     }
