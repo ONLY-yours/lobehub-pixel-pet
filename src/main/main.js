@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, screen, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell, dialog, Tray, Menu, nativeImage } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -12,6 +12,7 @@ const { Store } = require('../core/store');
 const { PetService } = require('./pet-service');
 const { SPECIES, SPECIES_IDS } = require('../core/species');
 const { FOODS } = require('../core/pet-state');
+const { createTrayController } = require('./tray-controller');
 
 const TEST_MODE = process.env.PIXELPET_TEST === '1';
 const HEARTBEAT_MS = TEST_MODE ? 2000 : 30 * 1000;
@@ -22,6 +23,8 @@ if (TEST_MODE) app.commandLine.appendSwitch('no-sandbox');
 
 let win = null;
 let service = null;
+let tray = null;
+let trayController = null;
 
 function place(mode) {
   const { w, h } = SIZES[mode];
@@ -148,6 +151,7 @@ function wire() {
     win.setPosition(Math.round(x + dx), Math.round(y + dy));
   });
   ipcMain.on('place', (_e, mode) => { if (mode in SIZES) place(mode); });
+  ipcMain.on('hide-window', () => { if (trayController) trayController.hide(); });
   ipcMain.on('quit', () => app.quit());
 
   if (TEST_MODE) {
@@ -178,6 +182,20 @@ app.whenReady().then(() => {
   service = new PetService({ lh, responses: new ResponsesClient({ lh }), store });
   wire();
   createWindow();
+  try {
+    const iconPath = app.isPackaged ? path.join(process.resourcesPath, 'tray-icon.png') : path.join(__dirname, '../../build/icon.png');
+    const icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) throw new Error('Tray icon not found');
+    tray = new Tray(icon.resize({ width: process.platform === 'darwin' ? 18 : 32, height: process.platform === 'darwin' ? 18 : 32 }));
+    if (process.platform === 'win32') win.setSkipTaskbar(true);
+    if (process.platform === 'darwin' && app.dock) app.dock.hide();
+    trayController = createTrayController({ app, window: win, tray, menu: Menu });
+  } catch (error) {
+    if (tray) { tray.destroy(); tray = null; }
+    if (process.platform === 'win32') win.setSkipTaskbar(false);
+    if (process.platform === 'darwin' && app.dock) app.dock.show();
+    logError(error);
+  }
   if (!TEST_MODE) setInterval(() => service.heartbeat().catch((e) => console.error(e)), HEARTBEAT_MS);
   // Tell the renderer whether the mouse is over the pet, from the OS cursor position (see core/pointer.js).
   // Tests drive hover with synthetic DOM events instead, so this is off there.

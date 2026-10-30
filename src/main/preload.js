@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('pet', {
   release: (opts) => ipcRenderer.invoke('release', opts),
   moveBy: (dx, dy) => ipcRenderer.send('move-by', { dx, dy }),
   quit: () => ipcRenderer.send('quit'),
+  hideWindow: () => ipcRenderer.send('hide-window'),
   place: (mode) => ipcRenderer.send('place', mode),
   openLog: () => ipcRenderer.send('open-log'),
   debugSet: (patch) => ipcRenderer.invoke('debug-set', patch),

@@ -35,6 +35,9 @@
       "src/**/*",
       "package.json"
     ],
+    "extraResources": [
+      { "from": "build/icon.png", "to": "tray-icon.png" }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "dist"
