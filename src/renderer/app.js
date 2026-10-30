@@ -309,6 +309,7 @@ function bindPetUi() {
     const m = e.target.dataset && e.target.dataset.menu;
     if (!m) return;
     $('main-menu').classList.add('hidden');
+    if (m === 'hide') window.pet.hideWindow();
     if (m === 'quit') window.pet.quit();
     if (m === 'log') window.pet.openLog();
     if (m === 'local') {
